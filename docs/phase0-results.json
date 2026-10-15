@@ -1,53 +1,477 @@
 {
-  "at": "2026-10-15T12:16:43.410385+00:00",
+  "at": "2026-10-15T13:02:38.389367+00:00",
   "seed": 42,
   "image": "falkordb/falkordb:latest",
-  "acceptance": "BLOCKED",
+  "acceptance": "PASS",
   "checks": {
     "connection": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "services": 58
+      }
     },
     "pagerank": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "rows": 58,
+        "stored": 58
+      }
     },
     "betweenness": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "rows": 58,
+        "bridge_score": 3.0
+      }
     },
     "wcc": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "rows": [
+          [
+            "svc-0",
+            0
+          ],
+          [
+            "svc-1",
+            0
+          ],
+          [
+            "svc-2",
+            0
+          ],
+          [
+            "svc-15",
+            15
+          ]
+        ]
+      }
     },
     "cdlp": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "rows": [
+          [
+            "svc-0",
+            0
+          ],
+          [
+            "svc-1",
+            1
+          ],
+          [
+            "svc-2",
+            0
+          ],
+          [
+            "svc-15",
+            15
+          ]
+        ],
+        "not_used_as_wcc": true
+      }
     },
     "shortest_path": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "FAIL",
+      "error": "ResponseError: FalkorDB currently only supports shortestPaths in WITH or RETURN clauses",
+      "fallback_evidence": {
+        "bounded_path": [
+          [
+            2,
+            [
+              "svc-2",
+              "svc-1",
+              "svc-0"
+            ]
+          ]
+        ]
+      },
+      "fallback_verified": true
     },
     "zero_hop": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "reachable_including_self": [
+          [
+            "svc-1"
+          ],
+          [
+            "svc-0"
+          ]
+        ]
+      }
     },
     "multi_statement": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "FAIL",
+      "error": "ResponseError: Error: query with more than one statement is not supported.",
+      "fallback_evidence": {
+        "ordered_requests_created": 2,
+        "atomic_together": false
+      },
+      "fallback_verified": true
     },
     "graph_copy": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "copy_ms": 59.050248,
+        "bidirectional_mutation_isolation": true
+      }
     },
     "concurrency": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "workers": 20,
+        "tasks": 8,
+        "elapsed_ms": 61.494117,
+        "double_claim_groups": 0,
+        "successful_claims": 8,
+        "lost_attempts": 152,
+        "increment_intervals": [
+          {
+            "worker": 0,
+            "start_ns": 84962522875,
+            "end_ns": 84965769229,
+            "value": 1
+          },
+          {
+            "worker": 1,
+            "start_ns": 84963212713,
+            "end_ns": 84968147335,
+            "value": 9
+          },
+          {
+            "worker": 2,
+            "start_ns": 84962590430,
+            "end_ns": 84966840516,
+            "value": 5
+          },
+          {
+            "worker": 3,
+            "start_ns": 84963270076,
+            "end_ns": 84966191371,
+            "value": 2
+          },
+          {
+            "worker": 4,
+            "start_ns": 84962659175,
+            "end_ns": 84968750237,
+            "value": 20
+          },
+          {
+            "worker": 5,
+            "start_ns": 84963337293,
+            "end_ns": 84968562498,
+            "value": 14
+          },
+          {
+            "worker": 6,
+            "start_ns": 84963396373,
+            "end_ns": 84965549687,
+            "value": 3
+          },
+          {
+            "worker": 7,
+            "start_ns": 84962721595,
+            "end_ns": 84967445166,
+            "value": 6
+          },
+          {
+            "worker": 8,
+            "start_ns": 84962794189,
+            "end_ns": 84968351834,
+            "value": 19
+          },
+          {
+            "worker": 9,
+            "start_ns": 84963457160,
+            "end_ns": 84968662568,
+            "value": 16
+          },
+          {
+            "worker": 10,
+            "start_ns": 84962851535,
+            "end_ns": 84967532446,
+            "value": 10
+          },
+          {
+            "worker": 11,
+            "start_ns": 84963512995,
+            "end_ns": 84967738010,
+            "value": 7
+          },
+          {
+            "worker": 12,
+            "start_ns": 84962910689,
+            "end_ns": 84967856348,
+            "value": 15
+          },
+          {
+            "worker": 13,
+            "start_ns": 84963572307,
+            "end_ns": 84968452246,
+            "value": 17
+          },
+          {
+            "worker": 14,
+            "start_ns": 84962971930,
+            "end_ns": 84967332404,
+            "value": 11
+          },
+          {
+            "worker": 15,
+            "start_ns": 84963629575,
+            "end_ns": 84966630275,
+            "value": 8
+          },
+          {
+            "worker": 16,
+            "start_ns": 84963028274,
+            "end_ns": 84967966841,
+            "value": 12
+          },
+          {
+            "worker": 17,
+            "start_ns": 84963688362,
+            "end_ns": 84967216819,
+            "value": 4
+          },
+          {
+            "worker": 18,
+            "start_ns": 84963096118,
+            "end_ns": 84968846186,
+            "value": 18
+          },
+          {
+            "worker": 19,
+            "start_ns": 84962453722,
+            "end_ns": 84967629572,
+            "value": 13
+          }
+        ],
+        "increments_have_no_lost_updates": true,
+        "slow_write_interval": {
+          "start_ns": 84970187272,
+          "end_ns": 85014066787
+        },
+        "read_intervals": [
+          {
+            "start_ns": 84970299008,
+            "end_ns": 84970766841
+          },
+          {
+            "start_ns": 84970767519,
+            "end_ns": 84971056898
+          },
+          {
+            "start_ns": 84971057514,
+            "end_ns": 84971514067
+          },
+          {
+            "start_ns": 84971514648,
+            "end_ns": 84971779218
+          },
+          {
+            "start_ns": 84971779853,
+            "end_ns": 84972097864
+          },
+          {
+            "start_ns": 84972098594,
+            "end_ns": 84972427282
+          },
+          {
+            "start_ns": 84972427949,
+            "end_ns": 84972920234
+          },
+          {
+            "start_ns": 84972925629,
+            "end_ns": 84973287951
+          },
+          {
+            "start_ns": 84973288501,
+            "end_ns": 84973738859
+          },
+          {
+            "start_ns": 84973739288,
+            "end_ns": 84974043838
+          }
+        ],
+        "reads_completed_inside_write_client_interval": 10,
+        "interpretation": "Atomic updates observed; engine write serialization is not proven by timing alone."
+      }
     },
     "latency": {
-      "status": "BLOCKED",
-      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+      "status": "PASS",
+      "evidence": {
+        "fixture_services": 58,
+        "warmup": 10,
+        "samples_ms": [
+          0.476698,
+          0.748722,
+          0.778588,
+          0.630585,
+          0.55698,
+          0.729629,
+          0.594553,
+          0.523228,
+          0.488109,
+          0.590498,
+          0.517999,
+          0.649531,
+          0.586644,
+          0.652288,
+          0.545139,
+          0.51348,
+          0.594541,
+          0.497493,
+          0.479107,
+          0.542093,
+          0.471912,
+          0.457086,
+          0.471685,
+          0.52958,
+          0.585525,
+          0.647449,
+          0.714348,
+          0.567254,
+          0.539301,
+          0.504053,
+          0.473721,
+          0.480284,
+          0.553157,
+          0.53845,
+          0.556937,
+          0.527301,
+          0.55292,
+          0.526289,
+          0.73176,
+          0.619462,
+          0.586685,
+          0.522911,
+          0.561722,
+          0.497896,
+          0.443135,
+          0.439966,
+          0.441995,
+          0.426467,
+          0.405139,
+          0.431729,
+          0.403431,
+          0.400448,
+          0.454602,
+          0.613259,
+          0.468705,
+          0.468979,
+          0.451374,
+          0.440189,
+          0.434272,
+          0.39417,
+          0.380607,
+          0.376563,
+          0.372983,
+          0.524972,
+          0.398049,
+          0.408765,
+          0.398039,
+          0.515968,
+          0.601844,
+          0.527903,
+          0.404567,
+          0.419057,
+          0.407276,
+          0.376569,
+          0.371128,
+          0.356927,
+          0.400191,
+          0.391496,
+          0.370185,
+          0.433337,
+          0.41072,
+          0.421739,
+          0.400806,
+          0.373733,
+          0.409008,
+          0.826436,
+          0.59886,
+          0.510194,
+          0.441659,
+          0.45379,
+          0.429887,
+          0.458272,
+          0.411567,
+          0.426766,
+          0.450038,
+          0.385307,
+          0.39629,
+          0.386019,
+          0.370735,
+          0.559374
+        ],
+        "p50_ms": 0.4728165,
+        "p95_ms": 0.714348,
+        "query": "UNWIND $alerting AS sid MATCH p=(a:Service {id:sid})-[:DEPENDS_ON*0..5]->(c:Service) WITH c,count(DISTINCT a) AS hits,min(length(p)) AS nearest WHERE hits=size($alerting) RETURN c.id,nearest,c.pagerank ORDER BY nearest LIMIT 5"
+      }
     }
   },
-  "blocker": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+  "server": {
+    "redis_version": "8.10.2",
+    "redis_git_sha1": 0,
+    "redis_git_dirty": 1,
+    "redis_build_id": "7e3bb15252fca6f9",
+    "redis_mode": "standalone",
+    "os": "Linux 6.6.87.2-microsoft-standard-WSL2 x86_64",
+    "arch_bits": 64,
+    "monotonic_clock": "POSIX clock_gettime",
+    "multiplexing_api": "epoll",
+    "atomicvar_api": "c11-builtin",
+    "gcc_version": "14.2.0",
+    "process_id": 1,
+    "process_supervised": "no",
+    "run_id": "9c8ddc553ee8868aec02221dab22d77b205fe10f",
+    "tcp_port": 6379,
+    "server_time_usec": 1792069358464705,
+    "uptime_in_seconds": 18,
+    "uptime_in_days": 0,
+    "hz": 10,
+    "configured_hz": 10,
+    "lru_clock": 13684462,
+    "executable": "/var/lib/falkordb/redis-server",
+    "config_file": "",
+    "io_threads_active": 0,
+    "listener0": {
+      "name": "tcp",
+      "bind": "-::*",
+      "port": 6379
+    }
+  },
+  "modules": [
+    [
+      "name",
+      "graph",
+      "ver",
+      42201,
+      "path",
+      "/var/lib/falkordb/bin/falkordb.so",
+      "args",
+      [
+        "MAX_QUEUED_QUERIES",
+        "25",
+        "TIMEOUT",
+        "1000",
+        "RESULTSET_SIZE",
+        "10000"
+      ]
+    ],
+    [
+      "name",
+      "vectorset",
+      "ver",
+      1,
+      "path",
+      "",
+      "args",
+      []
+    ]
+  ],
+  "python_client": "1.8.0",
+  "cleanup_errors": []
 }

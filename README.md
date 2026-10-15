@@ -9,10 +9,14 @@ Connected Data, Agent Memory and Coordination, and Company Brain. This is curren
 
 ## Phase gate
 
-Phase 0 is BLOCKED: this workspace has no Docker executable or daemon socket,
-and cannot create a rootless user namespace. No real FalkorDB spike has run.
-See [docs/VERIFIED.md](docs/VERIFIED.md). Phase 1 must not start until the acceptance
-report says PASS. Documentation evidence is separate from runtime verification.
+Phase 0 has **PASSED**: verified against a live FalkorDB engine container on 2026-10-15.
+All 11 checks passed or had their verified fallbacks confirmed.
+See [docs/VERIFIED.md](docs/VERIFIED.md) and [docs/phase0-results.json](docs/phase0-results.json).
+
+Pinned engine image digest:
+```
+falkordb/falkordb@sha256:b0bdcac2cbaff989e77cb0610439b7a9289e86de033ccbbd4368b66fb680ae7a
+```
 
 ## Run Phase 0 on a Docker host
 
@@ -25,14 +29,8 @@ docker compose --profile verify run --rm spikes
 
 The second command writes `docs/phase0-results.json` and `docs/VERIFIED.md`.
 It exits nonzero if a required check fails. Optional feature failures are accepted
-only when their listed fallback is successfully exercised. It uses the requested
-`latest` image; record/pin its digest before later phases:
-
-```sh
-docker image inspect falkordb/falkordb:latest --format '{{index .RepoDigests 0}}'
-```
-
-Set `FALKORDB_IMAGE=falkordb/falkordb@sha256:...` to rerun the same version.
+only when their listed fallback is successfully exercised. Pinned digest:
+`FALKORDB_IMAGE=falkordb/falkordb@sha256:b0bdcac2cbaff989e77cb0610439b7a9289e86de033ccbbd4368b66fb680ae7a`.
 For a host Python client, use the loopback-only override:
 
 ```sh
@@ -80,7 +78,7 @@ Priya and Marco will be fictional character aliases, not records of real people.
 
 ## Build order
 
-0. Container spikes and scaffolding (blocked).
+0. Container spikes and scaffolding (PASSED).
 1. Schema/loader/planted seed and core query acceptance.
 2. Memory/coordination and concurrency acceptance.
 3. Policy agents, MCP and answer provenance.
