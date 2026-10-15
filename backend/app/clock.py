@@ -1,11 +1,19 @@
-"""Business time is injected; wall-clock time is reserved for benchmarks."""
+"""
+Dual clock architecture for Hindsight:
+1. DemoClock: Injected synthetic business timeline (frozen at 2026-10-15T03:11:00+05:30)
+   used for incident episodes, ADR-17, historical facts, and temporal decay.
+2. CoordinationClock: Real-world epoch time (milliseconds)
+   used for agent task leasing, heartbeats, concurrency races, and lease expiration.
+"""
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
+import time
 
 SIX_DAYS_MS = 6 * 24 * 3600 * 1000
 
 @dataclass
 class DemoClock:
+    """Synthetic business timeline for graph entities, decay, and as-of queries."""
     now_ms: int
 
     @classmethod
@@ -33,3 +41,15 @@ class DemoClock:
 
     def iso(self) -> str:
         return datetime.fromtimestamp(self.now_ms / 1000, tz=timezone.utc).isoformat()
+
+
+class CoordinationClock:
+    """Real epoch time used for leases, worker heartbeats, and live agent coordination."""
+
+    @staticmethod
+    def now_ms() -> int:
+        return int(time.time() * 1000)
+
+    @staticmethod
+    def is_expired(lease_until_ms: int) -> bool:
+        return CoordinationClock.now_ms() > lease_until_ms

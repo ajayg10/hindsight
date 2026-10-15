@@ -55,15 +55,16 @@ Actions will be simulated and approval gated.
 
 ## Data and reproducibility
 
-Phase 0 fixture is fully synthetic, generated with seed 42; it is not the company
-seed or an 18-month simulation. No public topology has been imported yet; license
-checks and credits are required before Phase 1. `DemoClock` freezes synthetic
-business time at 2026-10-15 03:11 IST. Real wall time is used only for measurements.
-Priya and Marco will be fictional character aliases, not records of real people.
+- **Dual-clock architecture**:
+  - `DemoClock`: Synthetic business timeline frozen at `2026-10-15 03:11 IST` (ADR-17 placed at exactly clock minus 6 days) used for incident episodes, historical fact supersession, and decay calculations.
+  - `CoordinationClock`: Real-world epoch time (milliseconds) used for agent task leasing, worker heartbeats, concurrency races, and lease expiration.
+- **Topology Core**: Google Online Boutique and Weaveworks Sock Shop core services (both Apache 2.0 licensed, credited).
+- **Enrichment**: Deterministic synthetic generation (`seed=42`) extending the topology to 58 services with rich clusters and realistic revenue tiers ($3,000/min total blast radius).
+- Priya and Marco are fictional character aliases, not records of real people.
 
 ## Known limitations / verified engine behavior
 
-- **Single-graph write serialization**: FalkorDB serializes writes within a single graph via its per-graph write lock. Concurrent read-only queries during ongoing writes are supported via snapshot isolation.
+- **Single-graph write serialization**: Writes serialize per graph; concurrent reads continued during a slow write in our test (reads did not block during a 50k-node write; numbers in VERIFIED.md).
 - **Q6 Fact supersession**: Broken into 3 idempotent requests with `Fact.applied: false` guard and Librarian sweep, since FalkorDB does not support multi-statement single queries.
 - **Q10 & critical_path**: Uses `WITH shortestPath(...) AS p WHERE p IS NOT NULL` syntax, which correctly resolves path hops when connected and evaluates to `NULL` for disconnected multi-fault incidents.
 - **Betweenness & WCC**: Native `algo.betweenness` and `algo.WCC` (via `:Alerting` label projection) work natively.
@@ -73,7 +74,7 @@ Priya and Marco will be fictional character aliases, not records of real people.
 
 0. Container spikes and scaffolding (PASSED).
 1. Schema/loader/planted seed and core query acceptance (PASSED).
-2. Memory/coordination and concurrency acceptance.
+2. Memory/coordination and concurrency acceptance (PASSED).
 3. Policy agents, MCP and answer provenance.
 4. API, SSE and war-room UI.
 5. Evaluation, scale and deployment.

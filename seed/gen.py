@@ -16,80 +16,97 @@ try:
 except ImportError:
     from plant import plant_golden_slice, ALERTING_SERVICES
 
-# 33 additional services to reach 58 total services
+# 33 additional services to reach 58 total services (realistic low rev_per_min)
 FILLER_SERVICES = [
-    # Data & Analytics pipelines
-    {"id": "analytics-collector", "name": "Event Stream Collector (Kafka)", "tier": "data", "rev_per_min": 2000},
-    {"id": "metrics-aggregator", "name": "Telemetry & Metrics Aggregator", "tier": "data", "rev_per_min": 1500},
-    {"id": "audit-logger", "name": "Compliance Audit Logger", "tier": "data", "rev_per_min": 1000},
-    {"id": "search-indexer", "name": "Elasticsearch Sync Worker", "tier": "data", "rev_per_min": 3000},
-    {"id": "data-warehouse-sync", "name": "BigQuery Data Lake Sync", "tier": "data", "rev_per_min": 1200},
-    {"id": "report-generator", "name": "Daily Financial Reporter", "tier": "domain", "rev_per_min": 2500},
-    {"id": "customer-insights", "name": "Customer Segmentation Engine", "tier": "domain", "rev_per_min": 3000},
+    # Data & Analytics pipelines (Hub: data-warehouse-sync)
+    {"id": "analytics-collector", "name": "Event Stream Collector (Kafka)", "tier": "data", "rev_per_min": 35},
+    {"id": "metrics-aggregator", "name": "Telemetry & Metrics Aggregator", "tier": "data", "rev_per_min": 25},
+    {"id": "audit-logger", "name": "Compliance Audit Logger", "tier": "data", "rev_per_min": 20},
+    {"id": "search-indexer", "name": "Elasticsearch Sync Worker", "tier": "data", "rev_per_min": 45},
+    {"id": "data-warehouse-sync", "name": "BigQuery Data Lake Sync", "tier": "data", "rev_per_min": 30},
+    {"id": "report-generator", "name": "Daily Financial Reporter", "tier": "domain", "rev_per_min": 40},
+    {"id": "customer-insights", "name": "Customer Segmentation Engine", "tier": "domain", "rev_per_min": 35},
     
     # Internal & Admin tools
-    {"id": "admin-portal", "name": "Staff Admin Dashboard", "tier": "edge", "rev_per_min": 500},
-    {"id": "support-console", "name": "Customer Support Console", "tier": "edge", "rev_per_min": 1800},
-    {"id": "billing-export", "name": "ERP Billing Integration Worker", "tier": "domain", "rev_per_min": 4000},
-    {"id": "tax-calculator", "name": "Avalara Tax Calculation Service", "tier": "domain", "rev_per_min": 3500},
-    {"id": "fraud-detector", "name": "Risk & Fraud Scoring Service", "tier": "domain", "rev_per_min": 6000},
-    {"id": "discount-engine", "name": "Coupons & Promotional Rules", "tier": "domain", "rev_per_min": 4500},
-    {"id": "loyalty-points", "name": "Rewards & Loyalty Wallet", "tier": "domain", "rev_per_min": 2000},
+    {"id": "admin-portal", "name": "Staff Admin Dashboard", "tier": "edge", "rev_per_min": 15},
+    {"id": "support-console", "name": "Customer Support Console", "tier": "edge", "rev_per_min": 25},
+    {"id": "billing-export", "name": "ERP Billing Integration Worker", "tier": "domain", "rev_per_min": 50},
+    {"id": "tax-calculator", "name": "Avalara Tax Calculation Service", "tier": "domain", "rev_per_min": 45},
+    {"id": "fraud-detector", "name": "Risk & Fraud Scoring Service", "tier": "domain", "rev_per_min": 60},
+    {"id": "discount-engine", "name": "Coupons & Promotional Rules", "tier": "domain", "rev_per_min": 40},
+    {"id": "loyalty-points", "name": "Rewards & Loyalty Wallet", "tier": "domain", "rev_per_min": 30},
     
-    # Supply chain & Logistics
-    {"id": "warehouse-manager", "name": "Warehouse Management Core", "tier": "domain", "rev_per_min": 5500},
-    {"id": "returns-service", "name": "RMA & Return Authorization", "tier": "domain", "rev_per_min": 3000},
-    {"id": "supplier-portal", "name": "Vendor Purchase Order Gateway", "tier": "edge", "rev_per_min": 1500},
-    {"id": "package-tracker", "name": "Delivery Tracking Integration", "tier": "domain", "rev_per_min": 2500},
-    {"id": "carrier-webhook", "name": "FedEx/UPS Inbound Webhook Listener", "tier": "edge", "rev_per_min": 2000},
-    {"id": "fleet-dispatch", "name": "Last-Mile Delivery Dispatcher", "tier": "domain", "rev_per_min": 3200},
+    # Supply chain & Logistics (Hub: warehouse-manager & carrier-webhook)
+    {"id": "warehouse-manager", "name": "Warehouse Management Core", "tier": "domain", "rev_per_min": 65},
+    {"id": "returns-service", "name": "RMA & Return Authorization", "tier": "domain", "rev_per_min": 35},
+    {"id": "supplier-portal", "name": "Vendor Purchase Order Gateway", "tier": "edge", "rev_per_min": 20},
+    {"id": "package-tracker", "name": "Delivery Tracking Integration", "tier": "domain", "rev_per_min": 35},
+    {"id": "carrier-webhook", "name": "FedEx/UPS Inbound Webhook Listener", "tier": "edge", "rev_per_min": 30},
+    {"id": "fleet-dispatch", "name": "Last-Mile Delivery Dispatcher", "tier": "domain", "rev_per_min": 40},
     
-    # Content & Marketing
-    {"id": "cms-service", "name": "Headless CMS API", "tier": "domain", "rev_per_min": 1500},
-    {"id": "media-storage", "name": "Product Image CDN Origin (S3)", "tier": "data", "rev_per_min": 2800},
-    {"id": "newsletter-worker", "name": "Email Campaign Batch Worker", "tier": "domain", "rev_per_min": 800},
-    {"id": "seo-renderer", "name": "Dynamic Pre-Renderer for Bots", "tier": "edge", "rev_per_min": 1200},
-    {"id": "ab-testing", "name": "Feature Flag & Experimentation Engine", "tier": "domain", "rev_per_min": 4000},
+    # Content & Marketing (Hub: cms-service)
+    {"id": "cms-service", "name": "Headless CMS API", "tier": "domain", "rev_per_min": 25},
+    {"id": "media-storage", "name": "Product Image CDN Origin (S3)", "tier": "data", "rev_per_min": 35},
+    {"id": "newsletter-worker", "name": "Email Campaign Batch Worker", "tier": "domain", "rev_per_min": 15},
+    {"id": "seo-renderer", "name": "Dynamic Pre-Renderer for Bots", "tier": "edge", "rev_per_min": 20},
+    {"id": "ab-testing", "name": "Feature Flag & Experimentation Engine", "tier": "domain", "rev_per_min": 45},
     
-    # Core Infrastructure utilities
-    {"id": "secrets-manager", "name": "HashiCorp Vault Enclave", "tier": "data", "rev_per_min": 5000},
-    {"id": "dns-resolver", "name": "Internal CoreDNS Resolver", "tier": "data", "rev_per_min": 1000},
-    {"id": "config-service", "name": "Dynamic Config Server", "tier": "data", "rev_per_min": 3000},
-    {"id": "rate-limiter", "name": "Distributed Redis Rate Limiter", "tier": "data", "rev_per_min": 4500},
-    {"id": "health-checker", "name": "Synthetic Uptime Monitor", "tier": "domain", "rev_per_min": 500},
-    {"id": "backup-worker", "name": "Automated Snapshot Runner", "tier": "data", "rev_per_min": 200},
-    {"id": "log-indexer", "name": "Vector Log Ingestion Pipe", "tier": "data", "rev_per_min": 1200},
-    {"id": "tracing-collector", "name": "OpenTelemetry Jaeger Collector", "tier": "data", "rev_per_min": 1500}
+    # Core Infrastructure utilities (Hub: rate-limiter & secrets-manager)
+    {"id": "secrets-manager", "name": "HashiCorp Vault Enclave", "tier": "data", "rev_per_min": 50},
+    {"id": "dns-resolver", "name": "Internal CoreDNS Resolver", "tier": "data", "rev_per_min": 15},
+    {"id": "config-service", "name": "Dynamic Config Server", "tier": "data", "rev_per_min": 35},
+    {"id": "rate-limiter", "name": "Distributed Redis Rate Limiter", "tier": "data", "rev_per_min": 55},
+    {"id": "health-checker", "name": "Synthetic Uptime Monitor", "tier": "domain", "rev_per_min": 10},
+    {"id": "backup-worker", "name": "Automated Snapshot Runner", "tier": "data", "rev_per_min": 10},
+    {"id": "log-indexer", "name": "Vector Log Ingestion Pipe", "tier": "data", "rev_per_min": 20},
+    {"id": "tracing-collector", "name": "OpenTelemetry Jaeger Collector", "tier": "data", "rev_per_min": 25}
 ]
 
-# Filler edges connecting filler services among themselves or to independent endpoints
-# (CRITICAL: NONE of these connect to cache-b or its 14 upstream services,
-#  so the 14 blast radius and 9 alerting common-ancestor invariants are preserved 100%!)
+# Filler edges connecting filler services into rich sub-clusters with realistic in-degree
 FILLER_EDGES = [
+    # Admin / Ingress cluster
     ("admin-portal", "secrets-manager"),
     ("admin-portal", "config-service"),
+    ("admin-portal", "rate-limiter"),
     ("support-console", "returns-service"),
     ("support-console", "package-tracker"),
+    ("support-console", "rate-limiter"),
+    
+    # Financial / Billing cluster
     ("billing-export", "tax-calculator"),
-    ("returns-service", "warehouse-manager"),
+    ("billing-export", "orders-db"),
+    ("discount-engine", "tax-calculator"),
+    ("fraud-detector", "orders-db"),
+    ("loyalty-points", "orders-db"),
+    
+    # Supply chain cluster (Hub: warehouse-manager)
     ("supplier-portal", "warehouse-manager"),
+    ("returns-service", "warehouse-manager"),
     ("warehouse-manager", "inventory-db"),
+    ("warehouse-manager", "package-tracker"),
     ("package-tracker", "carrier-webhook"),
     ("fleet-dispatch", "carrier-webhook"),
-    ("cms-service", "media-storage"),
+    ("fleet-dispatch", "warehouse-manager"),
+    
+    # Content & Marketing cluster (Hub: cms-service)
     ("seo-renderer", "cms-service"),
+    ("cms-service", "media-storage"),
+    ("cms-service", "ab-testing"),
     ("newsletter-worker", "emailservice"),
+    ("newsletter-worker", "cms-service"),
+    
+    # Analytics & Observability cluster (Hub: data-warehouse-sync)
     ("analytics-collector", "data-warehouse-sync"),
     ("report-generator", "data-warehouse-sync"),
     ("customer-insights", "data-warehouse-sync"),
+    ("search-indexer", "data-warehouse-sync"),
     ("log-indexer", "media-storage"),
     ("tracing-collector", "metrics-aggregator"),
     ("health-checker", "rate-limiter"),
+    ("health-checker", "dns-resolver"),
     ("backup-worker", "orders-db"),
     ("backup-worker", "inventory-db"),
-    ("fraud-detector", "orders-db"),
-    ("discount-engine", "tax-calculator"),
-    ("loyalty-points", "orders-db")
+    ("config-service", "secrets-manager")
 ]
 
 def generate_full_seed(db, graph_name="t:parcelo"):

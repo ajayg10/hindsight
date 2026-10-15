@@ -26,4 +26,14 @@ Google Antigravity assisted with:
 - Implementing `seed/gen.py` to enrich the topology to 58 services with filler docs and services while preserving all golden slice invariants.
 - Updating `docs/VERIFIED.md` and `docs/QUERIES.md` with write serialization findings, WCC projection details, Q10 WITH-form rewrite, and Q6 three-step idempotent redesign.
 
+## Phase 2 — 2026-10-15
+
+Google Antigravity assisted with:
+- Implementing split clock architecture in `backend/app/clock.py`: `DemoClock` for synthetic business timeline and `CoordinationClock` for live agent leasing and heartbeats.
+- Implementing coordination Cypher queries: `q01_release.cypher`, `q09_handoff.cypher`, `q08_procedure.cypher`, `q05_trace_decision.cypher`, and Q6 three-step idempotent queries (`q06_supersede_step1.cypher`, `q06_supersede_step2.cypher`, `q06_supersede_step3.cypher`, `q06_librarian_sweep.cypher`).
+- Writing `backend/eval/race.py` to test 20-worker concurrency (0 double claims), lease expiry and reclaim, and read latency during writes.
+- Implementing `backend/app/librarian.py` to recompute `EXPERT_IN` from evidence paths, sweep unapplied facts, decay aged facts, and induce candidate procedures.
+- Writing and executing `scripts/test_phase2.py` asserting all Phase 2 acceptance criteria on the live FalkorDB engine.
+
+
 

@@ -19,39 +19,39 @@ ALERTING_SERVICES = [
 
 SERVICES = [
     # Hubs & Targets
-    {"id": "cache-b", "name": "Session Cache Cluster (Redis B)", "tier": "data", "rev_per_min": 25000},
+    {"id": "cache-b", "name": "Session Cache Cluster (Redis B)", "tier": "data", "rev_per_min": 350},
     {"id": "cache-a", "name": "Legacy Cache Node (Redis A - Retired)", "tier": "data", "rev_per_min": 0},
-    {"id": "checkout-api", "name": "Checkout API Gateway", "tier": "domain", "rev_per_min": 22000},
-    {"id": "cartservice", "name": "Cart Service", "tier": "data", "rev_per_min": 14000},
-    {"id": "auth-service", "name": "Authentication Service", "tier": "domain", "rev_per_min": 18000},
-    {"id": "session-service", "name": "User Session Service", "tier": "domain", "rev_per_min": 12000},
+    {"id": "checkout-api", "name": "Checkout API Gateway", "tier": "domain", "rev_per_min": 320},
+    {"id": "cartservice", "name": "Cart Service", "tier": "data", "rev_per_min": 180},
+    {"id": "auth-service", "name": "Authentication Service", "tier": "domain", "rev_per_min": 220},
+    {"id": "session-service", "name": "User Session Service", "tier": "domain", "rev_per_min": 140},
     
     # Hop 2
-    {"id": "paymentservice", "name": "Payment Service", "tier": "domain", "rev_per_min": 20000},
-    {"id": "orders", "name": "Orders Service", "tier": "domain", "rev_per_min": 19000},
-    {"id": "user", "name": "User Profile Service", "tier": "domain", "rev_per_min": 9000},
-    {"id": "recommendationservice", "name": "Recommendation Engine", "tier": "domain", "rev_per_min": 8000},
-    {"id": "productcatalogservice", "name": "Product Catalog Service", "tier": "domain", "rev_per_min": 11000},
+    {"id": "paymentservice", "name": "Payment Service", "tier": "domain", "rev_per_min": 280},
+    {"id": "orders", "name": "Orders Service", "tier": "domain", "rev_per_min": 260},
+    {"id": "user", "name": "User Profile Service", "tier": "domain", "rev_per_min": 110},
+    {"id": "recommendationservice", "name": "Recommendation Engine", "tier": "domain", "rev_per_min": 90},
+    {"id": "productcatalogservice", "name": "Product Catalog Service", "tier": "domain", "rev_per_min": 150},
     
     # Hop 3
-    {"id": "frontend", "name": "Storefront Web App", "tier": "edge", "rev_per_min": 24000},
-    {"id": "edge-router", "name": "Edge Ingress Router", "tier": "edge", "rev_per_min": 21000},
-    {"id": "adservice", "name": "Ad Banner Service", "tier": "domain", "rev_per_min": 5000},
+    {"id": "frontend", "name": "Storefront Web App", "tier": "edge", "rev_per_min": 380},
+    {"id": "edge-router", "name": "Edge Ingress Router", "tier": "edge", "rev_per_min": 340},
+    {"id": "adservice", "name": "Ad Banner Service", "tier": "domain", "rev_per_min": 60},
     
     # Hop 4
-    {"id": "mobile-gateway", "name": "Mobile API Gateway", "tier": "edge", "rev_per_min": 16000},
-    {"id": "web-gateway", "name": "Web Ingress Gateway", "tier": "edge", "rev_per_min": 17000},
+    {"id": "mobile-gateway", "name": "Mobile API Gateway", "tier": "edge", "rev_per_min": 220},
+    {"id": "web-gateway", "name": "Web Ingress Gateway", "tier": "edge", "rev_per_min": 250},
     
     # Side / Independent Services (do NOT depend on cache-b)
-    {"id": "shippingservice", "name": "Shipping Dispatcher", "tier": "domain", "rev_per_min": 6000},
-    {"id": "shipping", "name": "Carrier Integration", "tier": "domain", "rev_per_min": 6000},
-    {"id": "queue-master", "name": "Async Task Queue (RabbitMQ)", "tier": "data", "rev_per_min": 4000},
-    {"id": "emailservice", "name": "Customer Notification Mailer", "tier": "domain", "rev_per_min": 3000},
-    {"id": "catalogue", "name": "Sock Catalogue Service", "tier": "domain", "rev_per_min": 5000},
-    {"id": "inventory-db", "name": "Warehouse Inventory DB", "tier": "data", "rev_per_min": 7000},
-    {"id": "orders-db", "name": "Relational Orders Store", "tier": "data", "rev_per_min": 15000},
-    {"id": "currencyservice", "name": "Currency Exchange Rates", "tier": "domain", "rev_per_min": 4000},
-    {"id": "notification-service", "name": "SMS & Push Gateway", "tier": "domain", "rev_per_min": 3500}
+    {"id": "shippingservice", "name": "Shipping Dispatcher", "tier": "domain", "rev_per_min": 80},
+    {"id": "shipping", "name": "Carrier Integration", "tier": "domain", "rev_per_min": 75},
+    {"id": "queue-master", "name": "Async Task Queue (RabbitMQ)", "tier": "data", "rev_per_min": 50},
+    {"id": "emailservice", "name": "Customer Notification Mailer", "tier": "domain", "rev_per_min": 40},
+    {"id": "catalogue", "name": "Sock Catalogue Service", "tier": "domain", "rev_per_min": 70},
+    {"id": "inventory-db", "name": "Warehouse Inventory DB", "tier": "data", "rev_per_min": 90},
+    {"id": "orders-db", "name": "Relational Orders Store", "tier": "data", "rev_per_min": 190},
+    {"id": "currencyservice", "name": "Currency Exchange Rates", "tier": "domain", "rev_per_min": 45},
+    {"id": "notification-service", "name": "SMS & Push Gateway", "tier": "domain", "rev_per_min": 35}
 ]
 
 def plant_golden_slice(db, graph_name="t:parcelo"):
@@ -136,8 +136,21 @@ def plant_golden_slice(db, graph_name="t:parcelo"):
     }]->(b)
     """, {"month_ago": month_ago, "adr17_time": adr17_time})
 
-    # 4. Plant ADR-17 Decision and Change
+    # 4. Plant ADR-17 Decision, Change, Doc, Thread, and Message
     g.query("""
+    CREATE (p_priya:Person {id:'priya', name:'Priya Sharma', status:'leave'})
+    CREATE (p_marco:Person {id:'marco', name:'Marco Rossi', status:'active'})
+    CREATE (p_alex:Person {id:'alex', name:'Alex Chen', status:'oncall'})
+
+    CREATE (t_infra:Team {id:'core-infra', name:'Core Infrastructure'})
+    CREATE (t_checkout:Team {id:'checkout-team', name:'Checkout & Payments'})
+    CREATE (t_edge:Team {id:'edge-team', name:'Edge Systems'})
+
+    CREATE (p_priya)-[:MEMBER_OF]->(t_infra)
+    CREATE (p_marco)-[:MEMBER_OF]->(t_infra)
+    CREATE (p_alex)-[:MEMBER_OF]->(t_checkout)
+
+    WITH p_priya, t_infra, t_checkout
     MATCH (old_svc:Service {id:'cache-a'}), (new_svc:Service {id:'cache-b'})
     CREATE (d:Decision {
         id: 'ADR-17',
@@ -152,28 +165,42 @@ def plant_golden_slice(db, graph_name="t:parcelo"):
     CREATE (d)-[:LED_TO]->(c)
     CREATE (c)-[:AFFECTS]->(old_svc)
     CREATE (c)-[:AFFECTS]->(new_svc)
-    """, {"adr17_time": adr17_time})
 
-    # 5. Plant Teams & People
-    g.query("""
-    CREATE (t_infra:Team {id:'core-infra', name:'Core Infrastructure'})
-    CREATE (t_checkout:Team {id:'checkout-team', name:'Checkout & Payments'})
-    CREATE (t_edge:Team {id:'edge-team', name:'Edge Systems'})
+    // Q5 Decision Provenance Nodes: Doc and Thread with Priya's Message
+    CREATE (d_doc:Doc {
+        id: 'doc-adr-17',
+        title: 'ADR-17: Cache-A EOL and Cache-B Migration Architecture Record',
+        kind: 'decision_record',
+        last_verified_at: $adr17_time
+    })-[:DESCRIBES]->(new_svc)
+    CREATE (d)-[:RECORDED_IN]->(d_doc)
+    CREATE (p_priya)-[:AUTHORED]->(d_doc)
 
-    CREATE (p_priya:Person {id:'priya', name:'Priya Sharma', status:'leave'})
-    CREATE (p_marco:Person {id:'marco', name:'Marco Rossi', status:'active'})
-    CREATE (p_alex:Person {id:'alex', name:'Alex Chen', status:'oncall'})
+    CREATE (th:Thread {
+        id: 'thread-adr-17',
+        title: 'RFC Discussion: Cache-A EOL & Redis Cluster Cache-B Architecture'
+    })
+    CREATE (d)-[:DISCUSSED_IN]->(th)
 
-    CREATE (p_priya)-[:MEMBER_OF]->(t_infra)
-    CREATE (p_marco)-[:MEMBER_OF]->(t_infra)
-    CREATE (p_alex)-[:MEMBER_OF]->(t_checkout)
+    CREATE (msg:Message {
+        id: 'msg-priya-adr17',
+        text: 'Propose retiring legacy cache-a and migrating session storage to Redis Cluster cache-b before peak traffic',
+        at: $msg_time
+    })
+    CREATE (msg)-[:IN]->(th)
+    CREATE (p_priya)-[:AUTHORED]->(msg)
+    CREATE (msg)-[:MENTIONS]->(new_svc)
 
     WITH t_infra, t_checkout
     MATCH (s_cache_b:Service {id:'cache-b'}), (s_cache_a:Service {id:'cache-a'}), (s_chk:Service {id:'checkout-api'})
     CREATE (t_infra)-[:OWNS {valid_from:$month_ago}]->(s_cache_b)
     CREATE (t_infra)-[:OWNS {valid_from:$month_ago}]->(s_cache_a)
     CREATE (t_checkout)-[:OWNS {valid_from:$month_ago}]->(s_chk)
-    """, {"month_ago": month_ago})
+    """, {
+        "adr17_time": adr17_time,
+        "msg_time": adr17_time - (2 * 86400 * 1000),
+        "month_ago": month_ago
+    })
 
     # 6. Plant Expertise (Priya 0.91 on leave, Marco 0.74 active with INC-0412)
     one_day_ms = 86400 * 1000

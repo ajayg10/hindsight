@@ -517,7 +517,7 @@ A FAIL is gate-compatible only when an exercised fallback is recorded.
 
 ### 1. Single-Graph Write Serialization & Read Concurrency
 - **Measured evidence**: In the slow-write test, a 50,000-node batch write (`start_ns: 84970187272`, `end_ns: 85014066787`, duration: ~43.88 ms) ran while a concurrent thread issued 10 read-only queries (`ro_query`). All 10 read queries completed inside the write interval (`start_ns: 84970299008` to `84974043838`, ~3.7 ms).
-- **Result**: FalkorDB allows concurrent read-only queries during ongoing writes via snapshot reads. However, **writes within a single graph strictly serialize** on the graph write lock. This is confirmed by atomic counter increments across 20 threads producing sequentially ordered integers `[1..20]` with 0 lost updates. In multi-tenant deployments, distinct tenant graphs can process writes concurrently.
+- **Result**: **Writes serialize per graph; concurrent reads continued during a slow write in our test (reads did not block during a 50k-node write; numbers in VERIFIED.md).** Atomic counter increments across 20 threads produced sequentially ordered values `[1..20]` with 0 lost updates, confirming strict write serialization on the single graph. Distinct tenant graphs can process writes concurrently.
 
 ### 2. WCC Projection
 - **Measured evidence**: `algo.WCC({nodeLabels: ['Alerting'], relationshipTypes: ['DEPENDS_ON']})` executed natively and cleanly partitioned alerting nodes `{svc-0, svc-1, svc-2, svc-15}` into components `['svc-0', 'svc-1', 'svc-2']` (component 0) and `['svc-15']` (component 15).
