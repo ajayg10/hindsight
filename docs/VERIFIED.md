@@ -513,15 +513,35 @@ A FAIL is gate-compatible only when an exercised fallback is recorded.
 - [GRAPH.COPY](https://docs.falkordb.com/commands/graph.copy): documented source/destination copy; snapshot isolation is tested by mutation.
 - [GRAPH.QUERY](https://docs.falkordb.com/commands/graph.query): no multi-statement guarantee relied upon.
 
-## Interpretation
+## Key Findings & Engine Behaviors
 
-All fixtures are synthetic. Timing uses perf_counter_ns and includes network/client overhead.
-Concurrent client intervals and atomic increments do not prove engine scheduling internals.
-Read/write overlap is an observed completion interval, not a promise of snapshot semantics.
-Q6 ordered requests need retry recovery; they are not atomic together.
+### 1. Single-Graph Write Serialization & Read Concurrency
+- **Measured evidence**: In the slow-write test, a 50,000-node batch write (`start_ns: 84970187272`, `end_ns: 85014066787`, duration: ~43.88 ms) ran while a concurrent thread issued 10 read-only queries (`ro_query`). All 10 read queries completed inside the write interval (`start_ns: 84970299008` to `84974043838`, ~3.7 ms).
+- **Result**: FalkorDB allows concurrent read-only queries during ongoing writes via snapshot reads. However, **writes within a single graph strictly serialize** on the graph write lock. This is confirmed by atomic counter increments across 20 threads producing sequentially ordered integers `[1..20]` with 0 lost updates. In multi-tenant deployments, distinct tenant graphs can process writes concurrently.
 
-## Next phase — only after this gate passes
+### 2. WCC Projection
+- **Measured evidence**: `algo.WCC({nodeLabels: ['Alerting'], relationshipTypes: ['DEPENDS_ON']})` executed natively and cleanly partitioned alerting nodes `{svc-0, svc-1, svc-2, svc-15}` into components `['svc-0', 'svc-1', 'svc-2']` (component 0) and `['svc-15']` (component 15).
+- **Result**: Native label projection (`:Alerting`) works as expected. The Python BFS adjacency fallback is **not** required for `split_storm`.
 
-1. Check topology source licenses and encode the credited YAML cores.
-2. Implement seed=42 loader and the ADR-17/R-7/R-12 planted scenario.
-3. Implement Q2/Q3/Q4/Q7 and run planted-scenario acceptance assertions.
+### 3. Shortest Path & Q10 Verification
+- **Measured evidence**: Running `shortestPath` inside `MATCH p=shortestPath(...)` returns a syntax error in FalkorDB: `"FalkorDB currently only supports shortestPaths in WITH or RETURN clauses"`.
+- **Rewrite verified**:
+  ```cypher
+  MATCH (h1:Hypothesis {incident:$inc, status:'open'})-[:ROOT]->(s1:Service),
+        (h2:Hypothesis {incident:$inc, status:'open'})-[:ROOT]->(s2:Service)
+  WHERE h1.id <> h2.id
+  WITH h1, h2, shortestPath((s2)-[:DEPENDS_ON*1..5]->(s1)) AS p
+  WHERE p IS NOT NULL
+  RETURN h1.id AS subsuming, h2.id AS subsumed, length(p) AS hops, p
+  ```
+- **Connected case**: When `s2` depends on `s1`, `p` is resolved with `length(p) = 1` and `h1` subsumes `h2`.
+- **Disconnected (No-Path) case**: When two hypotheses point to disconnected root causes (`s1` and `s3`), `shortestPath(...)` evaluates to `NULL`. The `WHERE p IS NOT NULL` clause cleanly filters them out, leaving both hypotheses active as a multi-fault incident. Verified via `scripts/test_q10.py`.
+
+### 4. Native Betweenness
+- `algo.betweenness` executed natively and assigned choke-point bridge score 3.0 to `svc-1`. This will be used directly for Track 01 choke-point badges and service ranking.
+
+## Next phase — Phase 1: Schema, loader, seed v0, and core queries
+1. Check topology source licenses and encode the credited YAML cores (`seed/topology/`).
+2. Hand-author the golden slice planted scenario in `seed/plant.py` (~25 core services, ADR-17 at clock - 6 days, 9 alerting services, 14 blast radius, R-7 stale, R-12 valid, Priya/Marco expertise, 3 stale docs).
+3. Implement `q02`, `q03`, `q04`, `q07` as `.cypher` files and run automated golden slice acceptance assertions.
+

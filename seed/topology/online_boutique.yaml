@@ -1,0 +1,48 @@
+# Google Online Boutique Microservices Architecture
+# Source: https://github.com/GoogleCloudPlatform/microservices-demo
+# License: Apache License 2.0 (Copyright Google LLC)
+# Used as recognizable baseline microservice topology core for Hindsight.
+
+name: online-boutique
+license: Apache-2.0
+services:
+  - id: frontend
+    tier: edge
+    rev_per_min: 12000
+    depends_on: [checkoutservice, recommendationservice, productcatalogservice, cartservice, shippingservice, currencyservice, adservice]
+  - id: checkoutservice
+    tier: domain
+    rev_per_min: 15000
+    depends_on: [cartservice, productcatalogservice, currencyservice, shippingservice, paymentservice, emailservice]
+  - id: paymentservice
+    tier: domain
+    rev_per_min: 15000
+    depends_on: []
+  - id: cartservice
+    tier: data
+    rev_per_min: 8000
+    depends_on: []
+  - id: productcatalogservice
+    tier: domain
+    rev_per_min: 6000
+    depends_on: []
+  - id: currencyservice
+    tier: domain
+    rev_per_min: 4000
+    depends_on: []
+  - id: shippingservice
+    tier: domain
+    rev_per_min: 5000
+    depends_on: []
+  - id: emailservice
+    tier: domain
+    rev_per_min: 2000
+    depends_on: []
+  - id: recommendationservice
+    tier: domain
+    rev_per_min: 4500
+    depends_on: [productcatalogservice]
+  - id: adservice
+    tier: domain
+    rev_per_min: 3000
+    depends_on: []

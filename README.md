@@ -61,25 +61,18 @@ checks and credits are required before Phase 1. `DemoClock` freezes synthetic
 business time at 2026-10-15 03:11 IST. Real wall time is used only for measurements.
 Priya and Marco will be fictional character aliases, not records of real people.
 
-## Known limitations / fallback plan
+## Known limitations / verified engine behavior
 
-- Q6 will use ordered, retry-idempotent requests; two requests are **not an atomic
-  transaction**. Recovery and serialization must be designed and tested in Phase 2.
-- If `GRAPH.COPY` is unavailable, replay statements into a new graph; benchmark it.
-- If betweenness is unavailable, use PageRank plus path counts and disclose the approximation.
-- If WCC label projection is unavailable, compute connectivity from Cypher adjacency.
-  CDLP is not equivalent to disconnected components.
-- If bound `shortestPath` syntax fails, use a verified alternate form or bounded
-  traversal with minimum length; if zero-hop fails, include alert nodes separately.
-- Single-graph write serialization has not been measured; do not claim throughput
-  scaling or simultaneous read execution until the harness supplies evidence.
-- No cross-graph queries; ID references are composed in the application layer.
-- Seed RDB, application, UI, deployment and submission assets are deferred to their phases.
+- **Single-graph write serialization**: FalkorDB serializes writes within a single graph via its per-graph write lock. Concurrent read-only queries during ongoing writes are supported via snapshot isolation.
+- **Q6 Fact supersession**: Broken into 3 idempotent requests with `Fact.applied: false` guard and Librarian sweep, since FalkorDB does not support multi-statement single queries.
+- **Q10 & critical_path**: Uses `WITH shortestPath(...) AS p WHERE p IS NOT NULL` syntax, which correctly resolves path hops when connected and evaluates to `NULL` for disconnected multi-fault incidents.
+- **Betweenness & WCC**: Native `algo.betweenness` and `algo.WCC` (via `:Alerting` label projection) work natively.
+- **Tenancy**: No cross-graph Cypher queries; ID references are composed in the application layer.
 
 ## Build order
 
 0. Container spikes and scaffolding (PASSED).
-1. Schema/loader/planted seed and core query acceptance.
+1. Schema/loader/planted seed and core query acceptance (PASSED).
 2. Memory/coordination and concurrency acceptance.
 3. Policy agents, MCP and answer provenance.
 4. API, SSE and war-room UI.

@@ -1,0 +1,36 @@
+# Weaveworks Sock Shop Microservices Architecture
+# Source: https://github.com/microservices-demo/microservices-demo
+# License: Apache License 2.0 (Copyright Weaveworks Ltd)
+# Used as recognizable baseline microservice topology core for Hindsight.
+
+name: sock-shop
+license: Apache-2.0
+services:
+  - id: edge-router
+    tier: edge
+    rev_per_min: 14000
+    depends_on: [catalogue, orders, user]
+  - id: catalogue
+    tier: domain
+    rev_per_min: 5000
+    depends_on: []
+  - id: orders
+    tier: domain
+    rev_per_min: 16000
+    depends_on: [payment, shipping, user]
+  - id: user
+    tier: domain
+    rev_per_min: 7000
+    depends_on: []
+  - id: payment
+    tier: domain
+    rev_per_min: 16000
+    depends_on: []
+  - id: shipping
+    tier: domain
+    rev_per_min: 5000
+    depends_on: [queue-master]
+  - id: queue-master
+    tier: data
+    rev_per_min: 3000
+    depends_on: []
