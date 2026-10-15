@@ -1,0 +1,33 @@
+name: hindsight
+services:
+  falkordb:
+    image: ${FALKORDB_IMAGE:-falkordb/falkordb:latest}
+    restart: unless-stopped
+    volumes:
+      - graph-data:/data
+    networks: [graph]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  spikes:
+    profiles: [verify]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.spikes
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
+      FALKORDB_IMAGE: ${FALKORDB_IMAGE:-falkordb/falkordb:latest}
+    volumes:
+      - ./docs:/work/docs
+    networks: [graph]
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    command: [python, scripts/phase0.py]
+networks:
+  graph:
+volumes:
+  graph-data:

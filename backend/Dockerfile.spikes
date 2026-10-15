@@ -1,0 +1,7 @@
+FROM python:3.11-slim
+WORKDIR /work
+COPY backend/requirements-spikes.txt backend/requirements-spikes.txt
+RUN pip install --no-cache-dir -r backend/requirements-spikes.txt
+COPY scripts scripts
+COPY backend/app/queries backend/app/queries
+CMD ["python", "scripts/phase0.py"]

@@ -1,0 +1,53 @@
+{
+  "at": "2026-10-15T12:16:43.410385+00:00",
+  "seed": 42,
+  "image": "falkordb/falkordb:latest",
+  "acceptance": "BLOCKED",
+  "checks": {
+    "connection": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "pagerank": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "betweenness": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "wcc": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "cdlp": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "shortest_path": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "zero_hop": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "multi_statement": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "graph_copy": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "concurrency": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    },
+    "latency": {
+      "status": "BLOCKED",
+      "error": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+    }
+  },
+  "blocker": "Docker executable and daemon socket absent; CapEff=0; rootless unshare -Ur fails with uid_map Operation not permitted. Installed FalkorDB client gets Connection refused on localhost:6379. All real-container spikes remain unexecuted."
+}
