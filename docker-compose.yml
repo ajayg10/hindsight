@@ -22,6 +22,9 @@ services:
       FALKORDB_IMAGE: ${FALKORDB_IMAGE:-falkordb/falkordb:latest}
     volumes:
       - ./docs:/work/docs
+      - ./backend:/work/backend
+      - ./seed:/work/seed
+      - ./scripts:/work/scripts
     networks: [graph]
     depends_on:
       falkordb:

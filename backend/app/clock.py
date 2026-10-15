@@ -23,6 +23,10 @@ class DemoClock:
         dt = datetime.fromisoformat("2026-10-15T03:11:00+05:30")
         return cls(int(dt.timestamp() * 1000))
 
+    @classmethod
+    def now(cls) -> int:
+        return cls.frozen().now_ms
+
     @property
     def adr17_ms(self) -> int:
         """ADR-17 is placed at exactly clock minus 6 days."""

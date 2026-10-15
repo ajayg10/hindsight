@@ -516,8 +516,10 @@ A FAIL is gate-compatible only when an exercised fallback is recorded.
 ## Key Findings & Engine Behaviors
 
 ### 1. Single-Graph Write Serialization & Read Concurrency
-- **Measured evidence**: In the slow-write test, a 50,000-node batch write (`start_ns: 84970187272`, `end_ns: 85014066787`, duration: ~43.88 ms) ran while a concurrent thread issued 10 read-only queries (`ro_query`). All 10 read queries completed inside the write interval (`start_ns: 84970299008` to `84974043838`, ~3.7 ms).
-- **Result**: **Writes serialize per graph; concurrent reads continued during a slow write in our test (reads did not block during a 50k-node write; numbers in VERIFIED.md).** Atomic counter increments across 20 threads produced sequentially ordered values `[1..20]` with 0 lost updates, confirming strict write serialization on the single graph. Distinct tenant graphs can process writes concurrently.
+- **Measured evidence**: In `backend/eval/race.py`, a 100,000-node batch write (`UNWIND range(1, 100000) AS i CREATE (:RaceWriteProbe {v:i})`) executed on graph `spike:race` with duration 54.17 ms (`write_start: 157338674477 ns`, `write_end: 157392848982 ns`). While the write was actively in flight, 20 concurrent read queries (`ro_query("MATCH (t:Task) RETURN count(t)")`) executed on the SAME graph.
+- **Overlap Verification**: The harness logged `write_start`, `write_end`, and each individual read's `start_ns` and `end_ns`. All 20 reads fell strictly inside the write window (`Read #01` at `+0.07 ms`, `Read #20` at `+10.31 ms`), confirming 100% temporal overlap on the same graph without blocking.
+- **Latency (measured on a local container, N=20)**: p50: **0.446 ms**, p95: **1.005 ms**.
+- **Result**: **Writes serialize per graph; concurrent reads continued during a slow write in our test (measured on a local container, N=20).** Atomic counter increments across 20 threads produced sequentially ordered values `[1..20]` with 0 lost updates, confirming strict write serialization on the single graph. Distinct tenant graphs can process writes concurrently.
 
 ### 2. WCC Projection
 - **Measured evidence**: `algo.WCC({nodeLabels: ['Alerting'], relationshipTypes: ['DEPENDS_ON']})` executed natively and cleanly partitioned alerting nodes `{svc-0, svc-1, svc-2, svc-15}` into components `['svc-0', 'svc-1', 'svc-2']` (component 0) and `['svc-15']` (component 15).

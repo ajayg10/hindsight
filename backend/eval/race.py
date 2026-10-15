@@ -127,30 +127,61 @@ def run_race_harness(db, graph_name="spike:race"):
     assert invariant_after == 0, "Double-claim invariant violated after reclaim!"
     print(f"Double-claim invariant after reclaim: {invariant_after} (PASS)")
 
-    # 3. Read Latency during Write Execution
-    print(f"\n--- 3. Read Latency during Ongoing Writes ---")
+    # 3. Read Latency during Write Execution (assert strict overlap on same graph)
+    print(f"\n--- 3. Read Latency during Ongoing Writes (same graph: '{graph_name}') ---")
+    write_timestamps = {}
     write_started = threading.Event()
+
     def slow_write():
         local_db = FalkorDB(host=os.getenv("FALKORDB_HOST", "falkordb"), port=int(os.getenv("FALKORDB_PORT", "6379")))
         local_g = local_db.select_graph(graph_name)
+        w_start = time.perf_counter_ns()
+        write_timestamps["start_ns"] = w_start
         write_started.set()
-        local_g.query("UNWIND range(1, 25000) AS i CREATE (:RaceWriteProbe {v:i})")
+        local_g.query("UNWIND range(1, 100000) AS i CREATE (:RaceWriteProbe {v:i})")
+        w_end = time.perf_counter_ns()
+        write_timestamps["end_ns"] = w_end
 
-    read_samples = []
+    read_intervals = []
+    local_read_db = FalkorDB(host=os.getenv("FALKORDB_HOST", "falkordb"), port=int(os.getenv("FALKORDB_PORT", "6379")))
+    local_read_g = local_read_db.select_graph(graph_name)
+
     with ThreadPoolExecutor(max_workers=1) as write_pool:
         future = write_pool.submit(slow_write)
         write_started.wait(timeout=5)
-        local_read_db = FalkorDB(host=os.getenv("FALKORDB_HOST", "falkordb"), port=int(os.getenv("FALKORDB_PORT", "6379")))
-        local_read_g = local_read_db.select_graph(graph_name)
         for _ in range(20):
             t0 = time.perf_counter_ns()
             local_read_g.ro_query("MATCH (t:Task) RETURN count(t)")
-            read_samples.append((time.perf_counter_ns() - t0) / 1e6)
+            t1 = time.perf_counter_ns()
+            read_intervals.append((t0, t1, (t1 - t0) / 1e6))
         future.result()
+
+    w_start = write_timestamps["start_ns"]
+    w_end = write_timestamps["end_ns"]
+    w_duration_ms = (w_end - w_start) / 1e6
+    read_samples = [d for _, _, d in read_intervals]
+
+    overlapping_reads = [
+        (i, r_start, r_end, dur)
+        for i, (r_start, r_end, dur) in enumerate(read_intervals)
+        if w_start <= r_start and r_end <= w_end
+    ]
+
+    print(f"Write query executed on '{graph_name}': duration={w_duration_ms:.2f} ms")
+    print(f"Write window: [{w_start} .. {w_end}] ns")
+    for i, (r_start, r_end, dur) in enumerate(read_intervals):
+        offset_ms = (r_start - w_start) / 1e6
+        inside = (w_start <= r_start and r_end <= w_end)
+        print(f"  Read #{i+1:02d}: start={r_start} (+{offset_ms:.2f}ms), end={r_end}, latency={dur:.3f}ms, inside_window={inside}")
+
+    assert len(overlapping_reads) == len(read_intervals), (
+        f"Expected all {len(read_intervals)} reads to overlap write inside [{w_start}, {w_end}], "
+        f"but only {len(overlapping_reads)} did."
+    )
 
     p50 = statistics.median(read_samples)
     p95 = sorted(read_samples)[int(len(read_samples) * 0.95) - 1]
-    print(f"Read queries during write: 20 completed. p50: {p50:.3f} ms, p95: {p95:.3f} ms")
+    print(f"Read queries during write (measured on a local container, N=20): p50: {p50:.3f} ms, p95: {p95:.3f} ms (100% overlapped)")
 
     # Cleanup
     try:

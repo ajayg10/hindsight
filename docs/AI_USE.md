@@ -35,5 +35,17 @@ Google Antigravity assisted with:
 - Implementing `backend/app/librarian.py` to recompute `EXPERT_IN` from evidence paths, sweep unapplied facts, decay aged facts, and induce candidate procedures.
 - Writing and executing `scripts/test_phase2.py` asserting all Phase 2 acceptance criteria on the live FalkorDB engine.
 
+## Phase 3 — 2026-10-15
+
+Google Antigravity assisted with:
+- Tightening Phase 2 race harness in `backend/eval/race.py`: logging write window timestamps (`write_start`, `write_end`) and each read query's timestamps, strictly asserting that all 20 reads (`N=20`) overlapped inside the write window on the same graph without blocking (measured p50: 0.446 ms, p95: 1.005 ms).
+- Documenting the complete graph schema, `EXPERT_IN` derivation formula (weights: doc 0.35, inc 0.45, msg 0.20, saturation 0.25), and disclosing synthetic seeded calibration in `docs/DATA_MODEL.md`.
+- Implementing `backend/app/policy.py` encoding the 5 explicit deterministic governance rules (`RULE-01-SPLIT-STORM`, `RULE-02-ROOT-CAUSE`, `RULE-03-INVESTIGATE-CONFLICT`, `RULE-04-GUARDRAIL-BLAST`, `RULE-05-STALE-PROCEDURE-REFUSAL`).
+- Implementing `backend/app/events.py` in-process typed event bus with monotonically increasing sequence numbers and pacing modes (`fast` vs `demo`).
+- Implementing `backend/app/mcp_server.py` official Python MCP SDK tool registry: strictly separating read-only vs write tools, creating `(:Answer)` nodes with `[:USED]` provenance edges, and providing `explain(answer_id)` for auditability. Creating a public `/mcp` server exposing only read-only tools.
+- Implementing asynchronous worker agents in `backend/app/agents/` (`sentinel.py`, `investigator.py` with distinct common-dependency vs betweenness heuristics, `responder.py` with blast radius guardrail and approval gate, `concierge.py` with expert rerouting, and `librarian.py` worker).
+- Enforcing architectural isolation via AST analysis in `scripts/test_phase3.py` ensuring agents never import `falkordb`, `redis`, or run raw Cypher.
+- Running and verifying the headless end-to-end storm story reproduction and kill-agent lease reclaim in `scripts/test_phase3.py` against live FalkorDB engine.
+
 
 

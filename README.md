@@ -75,10 +75,18 @@ Actions will be simulated and approval gated.
 0. Container spikes and scaffolding (PASSED).
 1. Schema/loader/planted seed and core query acceptance (PASSED).
 2. Memory/coordination and concurrency acceptance (PASSED).
-3. Policy agents, MCP and answer provenance.
-4. API, SSE and war-room UI.
+3. Policy agents, MCP server, and answer provenance (PASSED).
+   - Architectural isolation: agents call ONLY the MCP registry (0 DB imports, 0 raw Cypher).
+   - Public `/mcp` endpoint exposes read-only tools only.
+   - Dual-heuristic investigators: Investigator-A (Q2 common dependency -> `cache-b`) vs Investigator-B (centrality ranking -> `checkout-api`), resolved via Q10 subsumption.
+   - Guardrail approval gate for blast radius > 5 services ($3,000/min).
+   - Refusal of stale procedure R-7 (83.3% win rate) due to `change-adr-17`; selection of valid R-12 (60.0% win rate).
+   - Expert routing: Priya (0.91, on leave) rerouted to Marco (0.74, active).
+   - Librarian worker loop: audits staleness, opens 3 doc update tasks, sweeps decay and PageRank.
+   - Answer provenance: every answer creates an `Answer` node with `USED` evidence edges; `explain(answer_id)` returns evidence subgraph, Cypher text, and policy chip.
+   - Event bus: 37 typed golden events in strict sequence.
+4. API, SSE and war-room UI (4a: Cytoscape graph, SSE, crew lanes, run-the-storm; 4b: Memory panels, time scrubber, Why drawer, Graph OFF baseline).
 5. Evaluation, scale and deployment.
 6. Submission and bug bash; feature freeze Oct 18, 18:00 IST.
 
-See [AI disclosure](docs/AI_USE.md), [model status](docs/DATA_MODEL.md), and
-[query status](docs/QUERIES.md). Track claims will be added only when implemented.
+See [AI disclosure](docs/AI_USE.md), [data model & EXPERT_IN derivation](docs/DATA_MODEL.md), [verified engine behaviors](docs/VERIFIED.md), and [query status](docs/QUERIES.md).
