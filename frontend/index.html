@@ -53,6 +53,15 @@
 
     <!-- Actions & Storm Trigger -->
     <div class="actions">
+      <!-- Time Scrubber / As-Of Selector -->
+      <div class="mode-select time-scrubber">
+        <label for="timeline-select">Timeline:</label>
+        <select id="timeline-select" title="Toggle between Now and Pre-ADR-17 As-Of topology">
+          <option value="current" selected>Now (Post-ADR-17: cache-b)</option>
+          <option value="pre-adr-17">As-Of (Pre-ADR-17: cache-a)</option>
+        </select>
+      </div>
+
       <div class="mode-select">
         <label for="pacing-mode">Pacing:</label>
         <select id="pacing-mode">
@@ -60,13 +69,37 @@
           <option value="fast">Fast Mode (~3s)</option>
         </select>
       </div>
+
       <button id="btn-run-storm" class="btn btn-primary">
         <svg class="bolt-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
         </svg>
         <span id="btn-run-text">Run the Storm</span>
       </button>
-      <button id="btn-reset-graph" class="btn btn-ghost" title="Reset Graph to Initial Topology">
+
+      <!-- Advanced Features: Baseline Compare, Memory, Why Drawer -->
+      <button id="btn-baseline-modal" class="btn btn-outline" title="Compare Graph ON vs Graph OFF (TF-IDF)">
+        <span>Graph OFF vs ON</span>
+      </button>
+
+      <button id="btn-memory-modal" class="btn btn-outline" title="Inspect Episodic, Architectural & Social Memory">
+        <span>Org Memory</span>
+      </button>
+
+      <button id="btn-why-drawer" class="btn btn-outline" title="Explain Latest Decision Provenance & Cypher">
+        <span>Why?</span>
+      </button>
+
+      <button id="btn-create-fork" class="btn btn-ghost" title="Create Isolated Counterfactual Fork via GRAPH.COPY">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="6" y1="3" x2="6" y2="15"></line>
+          <circle cx="18" cy="6" r="3"></circle>
+          <circle cx="6" cy="18" r="3"></circle>
+          <path d="M18 9a9 9 0 0 1-9 9"></path>
+        </svg>
+      </button>
+
+      <button id="btn-reset-graph" class="btn btn-ghost" title="Reset Graph to Initial Golden Topology">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>
         </svg>
@@ -246,6 +279,167 @@
       <div class="feed-entry system">[SYSTEM] Connected to SSE event stream at /api/events. Waiting for storm initiation...</div>
     </div>
   </footer>
+
+  <!-- Why Drawer (Provenance & Cypher Inspector) -->
+  <aside id="why-drawer" class="drawer hidden">
+    <div class="drawer-header">
+      <div class="drawer-title-group">
+        <span class="drawer-tag">PROVENANCE & AUDIT</span>
+        <h3 id="why-title">Answer Provenance</h3>
+      </div>
+      <button id="why-close" class="drawer-close">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-section">
+        <span class="drawer-sec-label">EXECUTING TOOL / AGENT</span>
+        <div class="meta-badge-row">
+          <span class="badge badge-tool" id="why-tool">Tool: -</span>
+          <span class="badge badge-policy" id="why-policy">Policy: -</span>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <span class="drawer-sec-label">SUMMARY FINDING</span>
+        <p class="why-summary-text" id="why-summary">-</p>
+      </div>
+
+      <div class="drawer-section">
+        <span class="drawer-sec-label">CYPHER QUERY EXECUTED (FalkorDB Engine)</span>
+        <div class="code-container">
+          <div class="code-header">
+            <span id="why-cypher-name">query.cypher</span>
+            <button id="why-copy-cypher" class="btn-xs">Copy</button>
+          </div>
+          <pre><code id="why-cypher-code" class="language-cypher">// Awaiting query...</code></pre>
+        </div>
+      </div>
+
+      <div class="drawer-section">
+        <span class="drawer-sec-label">EVIDENCE SUBGRAPH NODES (:USED)</span>
+        <div class="evidence-list" id="why-evidence-list">
+          <span class="empty-state">No evidence nodes loaded.</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Baseline Comparison Modal (Graph OFF vs Graph ON) -->
+  <div id="baseline-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="track-pill track-02">EVALUATION & BENCHMARK</span>
+          <h3>Graph OFF vs Graph ON: The Stale Runbook Trap</h3>
+        </div>
+        <button id="baseline-close" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">
+          Standard RAG & Vector Search select runbooks based on keyword similarity and historical win rates.
+          Because text is blind to architectural changes, it selects deprecated runbooks targeting retired services.
+        </p>
+
+        <div class="baseline-query-bar">
+          <span class="input-label">Simulated Symptom:</span>
+          <input type="text" id="baseline-query-input" value="Redis cache memory saturation and high latency under checkout load" class="query-input">
+          <button id="btn-run-baseline" class="btn btn-primary btn-sm">Compare Modes</button>
+        </div>
+
+        <div class="baseline-comparison-grid">
+          <!-- Graph OFF Card -->
+          <div class="baseline-card graph-off">
+            <div class="bcard-header">
+              <span class="bcard-badge red">GRAPH OFF (Text / TF-IDF Search)</span>
+              <h4>Blind Keyword Matching</h4>
+            </div>
+            <div class="bcard-body">
+              <div class="rec-box red-tint">
+                <span class="rec-label">Selected Procedure:</span>
+                <span class="rec-name" id="off-rec-id">R-7: Redis Cluster Memory Eviction</span>
+                <span class="rec-target">Target: <strong id="off-rec-target">cache-a</strong> (Retired Node)</span>
+                <span class="rec-win">Historical Win Rate: <strong id="off-rec-win">83.3%</strong></span>
+              </div>
+              <div class="verdict-banner failure">
+                <span class="verdict-icon">⛔</span>
+                <div>
+                  <strong>CATASTROPHIC PRODUCTION FAILURE</strong>
+                  <p id="off-explanation">
+                    Text search matched keywords with 94% similarity and saw an 83.3% win rate. However, ADR-17 migrated checkout-api to cache-b. Executing R-7 flushes the wrong cache and prolongs outage!
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Graph ON Card -->
+          <div class="baseline-card graph-on">
+            <div class="bcard-header">
+              <span class="bcard-badge green">GRAPH ON (Hindsight Operational Graph)</span>
+              <h4>Architectural Lineage & Policy Guardrails</h4>
+            </div>
+            <div class="bcard-body">
+              <div class="rec-box green-tint">
+                <span class="rec-label">Selected Procedure:</span>
+                <span class="rec-name" id="on-rec-id">R-12: Distributed Redis Cluster Failover</span>
+                <span class="rec-target">Target: <strong id="on-rec-target">cache-b</strong> (Active Node)</span>
+                <span class="rec-win">Historical Win Rate: <strong id="on-rec-win">60.0%</strong></span>
+              </div>
+              <div class="verdict-banner success">
+                <span class="verdict-icon">✓</span>
+                <div>
+                  <strong>STALE PROCEDURE REFUSED BY RULE-05</strong>
+                  <p id="on-explanation">
+                    Hindsight traversed :INVALIDATED_BY edges to ADR-17, explicitly refusing R-7 despite its higher 83.3% win rate. R-12 safely executed on active cluster cache-b.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Organizational Memory Explorer Modal -->
+  <div id="memory-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="track-pill track-03">Track 03: Company Brain</span>
+          <h3>Organizational Memory Explorer (FalkorDB Graph Storage)</h3>
+        </div>
+        <button id="memory-close" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="tab-episodic">Episodic Memory (Incidents & Actions)</button>
+          <button class="tab-btn" data-tab="tab-architectural">Architectural Memory (ADRs & Lineage)</button>
+          <button class="tab-btn" data-tab="tab-social">Social & Expertise Memory (EXPERT_IN)</button>
+        </div>
+
+        <div class="tab-content" id="tab-episodic">
+          <h4>Recent Incident Episodes & Action Provenance</h4>
+          <div id="mem-episodic-list" class="mem-list">
+            <div class="mem-item loading">Loading episodic memory...</div>
+          </div>
+        </div>
+
+        <div class="tab-content hidden" id="tab-architectural">
+          <h4>Architectural Decisions & Invalidation Audit</h4>
+          <div id="mem-arch-list" class="mem-list">
+            <div class="mem-item loading">Loading architectural memory...</div>
+          </div>
+        </div>
+
+        <div class="tab-content hidden" id="tab-social">
+          <h4>Organizational Social Graph & Expertise Routing</h4>
+          <div id="mem-social-list" class="mem-list">
+            <div class="mem-item loading">Loading social memory...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

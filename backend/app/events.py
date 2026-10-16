@@ -36,7 +36,8 @@ EVENT_TYPES = {
     "answer",
     "action_executed",
     "incident_created",
-    "doc_task_opened"
+    "doc_task_opened",
+    "counterfactual_fork_created"
 }
 
 @dataclass

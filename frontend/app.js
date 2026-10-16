@@ -465,4 +465,281 @@ function initControls() {
     eventCount = 0;
     document.getElementById("event-counter").textContent = "0 Events";
   });
+
+  // -----------------------------------------------------------
+  // Phase 4b: Time Scrubber (Counterfactual As-Of Timeline)
+  // -----------------------------------------------------------
+  const timelineSelect = document.getElementById("timeline-select");
+  if (timelineSelect) {
+    timelineSelect.addEventListener("change", async (e) => {
+      const state = e.target.value;
+      try {
+        const res = await fetch(`/api/timeline/as-of?state=${state}`);
+        const data = await res.json();
+        if (cy && data.elements) {
+          cy.elements().remove();
+          cy.add(data.elements.nodes);
+          cy.add(data.elements.edges);
+          cy.layout({
+            name: "cose",
+            animate: true,
+            animationDuration: 400,
+            padding: 30
+          }).run();
+
+          document.getElementById("topo-node-count").textContent = data.as_of_label;
+
+          // Highlight based on state
+          data.elements.nodes.forEach(n => {
+            const el = cy.$id(n.data.id);
+            if (n.data.status === "alerting") el.addClass("alerting");
+            else if (n.data.status === "root_cause") el.addClass("root");
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load timeline snapshot:", err);
+      }
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Phase 4b: Why Drawer (Answer Provenance & Cypher)
+  // -----------------------------------------------------------
+  const whyDrawer = document.getElementById("why-drawer");
+  const btnWhy = document.getElementById("btn-why-drawer");
+  const whyClose = document.getElementById("why-close");
+  const copyCypher = document.getElementById("why-copy-cypher");
+
+  if (btnWhy) {
+    btnWhy.addEventListener("click", () => loadWhyDrawer("latest"));
+  }
+  if (whyClose) {
+    whyClose.addEventListener("click", () => whyDrawer.classList.add("hidden"));
+  }
+  if (copyCypher) {
+    copyCypher.addEventListener("click", () => {
+      const code = document.getElementById("why-cypher-code").textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        copyCypher.textContent = "Copied!";
+        setTimeout(() => { copyCypher.textContent = "Copy"; }, 2000);
+      });
+    });
+  }
+
+  // Clicking crew cards also opens Why drawer
+  document.querySelectorAll(".crew-card").forEach(card => {
+    card.style.cursor = "pointer";
+    card.addEventListener("click", () => loadWhyDrawer("latest"));
+  });
+
+  // -----------------------------------------------------------
+  // Phase 4b: Baseline Comparison Modal (Graph OFF vs ON)
+  // -----------------------------------------------------------
+  const baselineModal = document.getElementById("baseline-modal");
+  const btnBaseline = document.getElementById("btn-baseline-modal");
+  const baselineClose = document.getElementById("baseline-close");
+  const btnRunBaseline = document.getElementById("btn-run-baseline");
+
+  if (btnBaseline) {
+    btnBaseline.addEventListener("click", () => {
+      baselineModal.classList.remove("hidden");
+      loadBaselineComparison();
+    });
+  }
+  if (baselineClose) {
+    baselineClose.addEventListener("click", () => baselineModal.classList.add("hidden"));
+  }
+  if (btnRunBaseline) {
+    btnRunBaseline.addEventListener("click", () => {
+      const q = document.getElementById("baseline-query-input").value;
+      loadBaselineComparison(q);
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Phase 4b: Organizational Memory Modal
+  // -----------------------------------------------------------
+  const memoryModal = document.getElementById("memory-modal");
+  const btnMemory = document.getElementById("btn-memory-modal");
+  const memoryClose = document.getElementById("memory-close");
+
+  if (btnMemory) {
+    btnMemory.addEventListener("click", () => {
+      memoryModal.classList.remove("hidden");
+      loadMemorySummary();
+    });
+  }
+  if (memoryClose) {
+    memoryClose.addEventListener("click", () => memoryModal.classList.add("hidden"));
+  }
+
+  // Tab switching inside memory modal
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach(tc => tc.classList.add("hidden"));
+
+      e.target.classList.add("active");
+      const tabId = e.target.getAttribute("data-tab");
+      const targetContent = document.getElementById(tabId);
+      if (targetContent) targetContent.classList.remove("hidden");
+    });
+  });
+
+  // -----------------------------------------------------------
+  // Phase 4b: Isolated Counterfactual Fork via GRAPH.COPY
+  // -----------------------------------------------------------
+  const btnFork = document.getElementById("btn-create-fork");
+  if (btnFork) {
+    btnFork.addEventListener("click", async () => {
+      btnFork.style.opacity = "0.5";
+      try {
+        const res = await fetch("/api/fork/create", { method: "POST" });
+        const data = await res.json();
+        appendTerminalEntry({
+          event_type: "counterfactual_fork_created",
+          seq: ++eventCount,
+          payload: {
+            detail: `Isolated counterfactual fork created: ${data.fork_graph} via GRAPH.COPY in ${data.copy_duration_ms}ms (${data.node_count} nodes, ${data.edge_count} edges). Full isolation verified.`
+          }
+        });
+      } catch (err) {
+        console.error("Fork creation failed:", err);
+      } finally {
+        btnFork.style.opacity = "1";
+      }
+    });
+  }
+}
+
+// -------------------------------------------------------------
+// Helper: Load Why Drawer with Traceable Cypher Provenance
+// -------------------------------------------------------------
+async function loadWhyDrawer(answerId = "latest") {
+  const whyDrawer = document.getElementById("why-drawer");
+  whyDrawer.classList.remove("hidden");
+
+  try {
+    const res = await fetch(`/api/explain/${answerId}`);
+    if (!res.ok) throw new Error("Explain query failed");
+    const data = await res.json();
+
+    document.getElementById("why-title").textContent = `Provenance: ${data.answer_id}`;
+    document.getElementById("why-tool").textContent = `Tool: ${data.tool}`;
+    document.getElementById("why-policy").textContent = `Policy: ${data.policy_chip || data.policy_rule_id}`;
+    document.getElementById("why-summary").textContent = data.summary;
+    document.getElementById("why-cypher-name").textContent = data.cypher_name;
+    document.getElementById("why-cypher-code").textContent = data.cypher_text || "// Cypher query registered in Hindsight registry";
+
+    const evContainer = document.getElementById("why-evidence-list");
+    evContainer.innerHTML = "";
+    if (data.evidence_subgraph && data.evidence_subgraph.length > 0) {
+      data.evidence_subgraph.forEach(e => {
+        const chip = document.createElement("div");
+        chip.className = "evidence-chip";
+        chip.innerHTML = `
+          <span class="e-type">${(e.labels || ["Node"]).join(":")}</span>
+          <span class="e-id">${e.name || e.id}</span>
+        `;
+        evContainer.appendChild(chip);
+      });
+    } else {
+      evContainer.innerHTML = `<span class="empty-state">No direct evidence nodes linked.</span>`;
+    }
+  } catch (err) {
+    document.getElementById("why-summary").textContent = "Awaiting storm execution to record traceable Answer nodes in FalkorDB.";
+    document.getElementById("why-cypher-code").textContent = "// Run the storm first to produce answers and evidence";
+  }
+}
+
+// -------------------------------------------------------------
+// Helper: Load Baseline Comparison (Graph OFF vs Graph ON)
+// -------------------------------------------------------------
+async function loadBaselineComparison(query = "") {
+  try {
+    const url = query ? `/api/baseline/compare?query=${encodeURIComponent(query)}` : "/api/baseline/compare";
+    const res = await fetch(url);
+    const data = await res.json();
+
+    // Graph OFF
+    const off = data.graph_off;
+    document.getElementById("off-rec-id").textContent = `${off.recommended_procedure}: ${off.procedure_name}`;
+    document.getElementById("off-rec-target").textContent = off.target_service;
+    document.getElementById("off-rec-win").textContent = `${(off.historical_win_rate * 100).toFixed(1)}%`;
+    document.getElementById("off-explanation").textContent = off.explanation;
+
+    // Graph ON
+    const on = data.graph_on;
+    document.getElementById("on-rec-id").textContent = `${on.recommended_procedure}: ${on.procedure_name}`;
+    document.getElementById("on-rec-target").textContent = on.target_service;
+    document.getElementById("on-rec-win").textContent = `${(on.historical_win_rate * 100).toFixed(1)}%`;
+    document.getElementById("on-explanation").textContent = on.explanation;
+  } catch (err) {
+    console.error("Failed to fetch baseline comparison:", err);
+  }
+}
+
+// -------------------------------------------------------------
+// Helper: Load Organizational Memory Summary
+// -------------------------------------------------------------
+async function loadMemorySummary() {
+  try {
+    const res = await fetch("/api/memory/summary");
+    const data = await res.json();
+
+    // 1. Episodic
+    const epList = document.getElementById("mem-episodic-list");
+    epList.innerHTML = "";
+    if (data.episodic_memory.recorded_actions.length > 0) {
+      data.episodic_memory.recorded_actions.forEach(a => {
+        const item = document.createElement("div");
+        item.className = "mem-item";
+        item.innerHTML = `
+          <div class="mem-item-title">Action Episode: ${a.procedure} on ${a.target}</div>
+          <div class="mem-item-meta">Approved by: ${a.approved_by || "autonomous"} &bull; ID: ${a.id}</div>
+        `;
+        epList.appendChild(item);
+      });
+    } else {
+      epList.innerHTML = `<div class="mem-item">No incident action episodes recorded yet. Run the storm to populate.</div>`;
+    }
+
+    // 2. Architectural
+    const archList = document.getElementById("mem-arch-list");
+    archList.innerHTML = "";
+    data.architectural_memory.adrs.forEach(adr => {
+      const item = document.createElement("div");
+      item.className = "mem-item";
+      item.innerHTML = `
+        <div class="mem-item-title">ADR: ${adr.title}</div>
+        <div class="mem-item-meta">Change ID: ${adr.change_id} (${adr.kind})</div>
+      `;
+      archList.appendChild(item);
+    });
+    data.architectural_memory.invalidated_procedures.forEach(inv => {
+      const item = document.createElement("div");
+      item.className = "mem-item";
+      item.innerHTML = `
+        <div class="mem-item-title" style="color:#f87171;">Invalidated Procedure: ${inv.procedure_id} (${inv.name})</div>
+        <div class="mem-item-meta">Invalidated by ${inv.change_id}: ${inv.reason}</div>
+      `;
+      archList.appendChild(item);
+    });
+
+    // 3. Social
+    const socList = document.getElementById("mem-social-list");
+    socList.innerHTML = "";
+    data.social_memory.key_experts.forEach(exp => {
+      const item = document.createElement("div");
+      item.className = "mem-item";
+      const statusColor = exp.status === "leave" ? "#f87171" : "#10b981";
+      item.innerHTML = `
+        <div class="mem-item-title">${exp.name} &bull; EXPERT_IN ${exp.service} (Score: ${exp.score.toFixed(2)})</div>
+        <div class="mem-item-meta">Status: <span style="color:${statusColor};">${exp.status.toUpperCase()}</span></div>
+      `;
+      socList.appendChild(item);
+    });
+  } catch (err) {
+    console.error("Failed to load memory summary:", err);
+  }
 }

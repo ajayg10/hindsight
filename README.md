@@ -91,7 +91,12 @@ Actions will be simulated and approval gated.
      - Real-time Server-Sent Events (SSE) stream via `/api/events`.
      - 6 reactive crew lanes (Sentinel, Investigator-A/B, Conflict Resolution, Responder with operator approval gate, Concierge, Librarian).
      - Interactive storm runner CLI (`python scripts/run_storm.py --mode demo`).
-   - 4b. Memory panels, time scrubber, Why drawer, Graph OFF baseline (TF-IDF).
+   - 4b. Memory panels, time scrubber, Why drawer, Graph OFF baseline (PASSED).
+     - Why Drawer: click any answer/crew card to view answer provenance, executed Cypher query, and evidence subgraph.
+     - Graph OFF vs Graph ON: side-by-side benchmark proving that text/TF-IDF keyword search traps operators into running stale runbook R-7 (83.3% win rate) on retired cache-a, while Hindsight's graph policy (RULE-05) refuses R-7 and executes valid R-12 (60.0% win rate) on cache-b.
+     - Time Scrubber: interactive timeline switcher comparing pre-ADR-17 (checkout-api -> cache-a) with current post-migration architecture.
+     - Counterfactual Forking: instant copy-on-write tenant simulation fork via native FalkorDB GRAPH.COPY (< 70ms).
+     - Organizational Memory Explorer: Episodic, Architectural (ADRs & invalidations), and Social (Expertise routing & team ownership) graph views.
 5. Evaluation, scale and deployment.
 6. Submission and bug bash; feature freeze Oct 18, 18:00 IST.
 

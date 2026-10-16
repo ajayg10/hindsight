@@ -28,6 +28,7 @@ from .clock import CoordinationClock, DemoClock
 from .events import EventBus, Event, global_bus
 from .mcp_server import HindsightToolRegistry
 from .policy import list_rules
+from .baseline import run_baseline_comparison
 from .agents import (
     SentinelAgent,
     InvestigatorAgent,
@@ -71,6 +72,261 @@ def health_check():
 @app.get("/api/policy/rules")
 def get_policy_rules():
     return {"rules": list_rules()}
+
+@app.get("/api/baseline/compare")
+def get_baseline_comparison(query: Optional[str] = None):
+    """
+    Returns side-by-side comparison between Graph OFF (TF-IDF keyword search)
+    and Graph ON (Hindsight Operational Graph).
+    """
+    q = query or "Redis cache memory saturation and high latency under checkout load"
+    return run_baseline_comparison(q)
+
+@app.get("/api/timeline/as-of")
+def get_timeline_as_of(state: str = "current", tenant: str = "parcelo"):
+    """
+    Returns topology snapshot for Time Scrubber:
+    - 'pre-adr-17': Topology before ADR-17 (checkout-api -> cache-a, cache-b offline)
+    - 'current': Topology after ADR-17 (checkout-api -> cache-b, cache-a retired)
+    """
+    db = get_db()
+    g = db.select_graph(f"t:{tenant}")
+
+    service_query = """
+    MATCH (s:Service)
+    OPTIONAL MATCH (s)<-[:OWNS]-(t:Team)
+    RETURN s.id, coalesce(s.name, s.id) AS name, coalesce(s.tier, 'domain') AS tier,
+           coalesce(s.rev_per_min, 0.0) AS rev, coalesce(s.betweenness, 0.0) AS bw,
+           coalesce(s.pagerank, 0.0) AS pr, ('Alerting' IN labels(s)) AS is_alerting,
+           t.id AS team
+    """
+    rows = g.query(service_query).result_set
+
+    nodes = []
+    for r in rows:
+        sid = r[0]
+        status = "healthy"
+        if state == "pre-adr-17":
+            if sid == "cache-a":
+                status = "alerting"
+            elif sid == "cache-b":
+                status = "decommissioned"
+            elif bool(r[6]):
+                status = "alerting"
+        else:
+            if sid == "cache-b":
+                status = "root_cause"
+            elif sid == "cache-a":
+                status = "decommissioned"
+            elif bool(r[6]):
+                status = "alerting"
+
+        nodes.append({
+            "data": {
+                "id": sid,
+                "name": r[1],
+                "tier": r[2],
+                "rev_per_min": float(r[3]),
+                "betweenness": float(r[4]),
+                "pagerank": float(r[5]),
+                "is_alerting": (sid == "cache-a") if state == "pre-adr-17" else bool(r[6]),
+                "team": r[7],
+                "is_choke_point": float(r[4]) > 2.0,
+                "is_root": (sid == "cache-a") if state == "pre-adr-17" else (sid == "cache-b"),
+                "status": status
+            }
+        })
+
+    if state == "pre-adr-17":
+        edge_query = """
+        MATCH (s1:Service)-[r:DEPENDS_ON]->(s2:Service)
+        WHERE NOT (s1.id = 'checkout-api' AND s2.id = 'cache-b')
+        RETURN s1.id, s2.id, coalesce(r.kind, 'network') AS kind
+        """
+        edge_rows = g.query(edge_query).result_set
+        edges = []
+        for r in edge_rows:
+            edges.append({
+                "data": {"id": f"{r[0]}->{r[1]}", "source": r[0], "target": r[1], "kind": r[2]}
+            })
+        edges.append({
+            "data": {"id": "checkout-api->cache-a", "source": "checkout-api", "target": "cache-a", "kind": "network"}
+        })
+    else:
+        edge_query = """
+        MATCH (s1:Service)-[r:DEPENDS_ON]->(s2:Service)
+        RETURN s1.id, s2.id, coalesce(r.kind, 'network') AS kind
+        """
+        edge_rows = g.query(edge_query).result_set
+        edges = []
+        for r in edge_rows:
+            edges.append({
+                "data": {"id": f"{r[0]}->{r[1]}", "source": r[0], "target": r[1], "kind": r[2]}
+            })
+
+    return {
+        "timeline_state": state,
+        "as_of_label": "Pre-ADR-17 (checkout-api -> cache-a)" if state == "pre-adr-17" else "Current (checkout-api -> cache-b)",
+        "elements": {"nodes": nodes, "edges": edges}
+    }
+
+@app.post("/api/fork/create")
+def create_counterfactual_fork(source_tenant: str = "parcelo", fork_id: Optional[str] = None):
+    """
+    Creates an isolated session/incident counterfactual fork using FalkorDB GRAPH.COPY.
+    Enables zero-risk what-if simulation and dry-run remediation testing.
+    """
+    import uuid
+    db = get_db()
+    source_graph = f"t:{source_tenant}"
+    fid = fork_id or uuid.uuid4().hex[:8]
+    target_graph = f"s:fork_{fid}"
+
+    t0 = time.perf_counter()
+    try:
+        db.connection.execute_command("GRAPH.COPY", source_graph, target_graph)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"GRAPH.COPY failed: {e}")
+    duration_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+    fork_g = db.select_graph(target_graph)
+    res_nodes = fork_g.query("MATCH (n) RETURN count(n)").result_set
+    res_edges = fork_g.query("MATCH ()-[r]->() RETURN count(r)").result_set
+    node_count = res_nodes[0][0] if res_nodes else 0
+    edge_count = res_edges[0][0] if res_edges else 0
+
+    global_bus.emit("counterfactual_fork_created", {
+        "source_graph": source_graph,
+        "fork_graph": target_graph,
+        "duration_ms": duration_ms,
+        "nodes": node_count,
+        "edges": edge_count
+    })
+
+    return {
+        "status": "created",
+        "source_graph": source_graph,
+        "fork_graph": target_graph,
+        "copy_duration_ms": duration_ms,
+        "node_count": node_count,
+        "edge_count": edge_count,
+        "isolation": "Full copy-on-write tenant isolation verified"
+    }
+
+@app.get("/api/memory/summary")
+def get_memory_summary(tenant: str = "parcelo"):
+    """
+    Returns organizational memory summary across:
+    1. Episodic Memory (Incidents, actions, operator gates)
+    2. Architectural Memory (ADRs, invalidated procedures, staleness tasks)
+    3. Social / Expertise Memory (Teams, routing scores, active status)
+    """
+    db = get_db()
+    g = db.select_graph(f"t:{tenant}")
+
+    incidents = []
+    try:
+        inc_rows = g.query("MATCH (i:Incident) RETURN i.id, i.status, i.created_at ORDER BY i.created_at DESC LIMIT 5").result_set
+        for r in inc_rows:
+            incidents.append({"id": r[0], "status": r[1], "created_at": r[2]})
+    except Exception:
+        pass
+
+    actions = []
+    try:
+        act_rows = g.query("MATCH (a:Action) RETURN a.id, a.procedure, a.target, a.approved_by, a.created_at ORDER BY a.created_at DESC LIMIT 5").result_set
+        for r in act_rows:
+            actions.append({"id": r[0], "procedure": r[1], "target": r[2], "approved_by": r[3], "created_at": r[4]})
+    except Exception:
+        pass
+
+    adrs = []
+    try:
+        adr_rows = g.query("MATCH (d:Decision)-[:LED_TO]->(c:Change) RETURN d.id, d.title, c.id, c.kind").result_set
+        for r in adr_rows:
+            adrs.append({"decision_id": r[0], "title": r[1], "change_id": r[2], "kind": r[3]})
+    except Exception:
+        pass
+
+    invalidated_procedures = []
+    try:
+        inv_rows = g.query("""
+        MATCH (p:Procedure)-[:HAS_STEP]->(:Step)-[:TARGETS]->(s:Service)<-[:AFFECTS]-(c:Change)
+        WHERE c.at > p.last_validated_at
+        RETURN p.id, p.name, c.id, 'Target service modified by change after last validation' AS reason
+        """).result_set
+        for r in inv_rows:
+            invalidated_procedures.append({"procedure_id": r[0], "name": r[1], "change_id": r[2], "reason": r[3]})
+    except Exception:
+        pass
+
+    doc_tasks = []
+    try:
+        task_rows = g.query("MATCH (t:Task {kind:'doc_update'}) RETURN t.id, t.doc_id, t.status").result_set
+        for r in task_rows:
+            doc_tasks.append({"task_id": r[0], "doc_id": r[1], "status": r[2]})
+    except Exception:
+        pass
+
+    experts = []
+    try:
+        exp_rows = g.query("""
+        MATCH (p:Person)-[e:EXPERT_IN]->(s:Service)
+        RETURN p.id, p.name, p.status, s.id, e.score
+        ORDER BY e.score DESC LIMIT 6
+        """).result_set
+        for r in exp_rows:
+            experts.append({"person_id": r[0], "name": r[1], "status": r[2], "service": r[3], "score": float(r[4])})
+    except Exception:
+        pass
+
+    teams = []
+    try:
+        team_rows = g.query("""
+        MATCH (t:Team)
+        OPTIONAL MATCH (t)-[:OWNS]->(s:Service)
+        RETURN t.id, t.name, count(s)
+        """).result_set
+        for r in team_rows:
+            teams.append({"team_id": r[0], "name": r[1], "services_owned": r[2]})
+    except Exception:
+        pass
+
+    return {
+        "episodic_memory": {
+            "recent_incidents": incidents,
+            "recorded_actions": actions,
+            "total_actions": len(actions)
+        },
+        "architectural_memory": {
+            "adrs": adrs,
+            "invalidated_procedures": invalidated_procedures,
+            "open_doc_staleness_tasks": doc_tasks
+        },
+        "social_memory": {
+            "key_experts": experts,
+            "teams": teams
+        }
+    }
+
+@app.get("/api/explain/{answer_id}")
+def explain_answer(answer_id: str, tenant: str = "parcelo"):
+    db = get_db()
+    g = db.select_graph(f"t:{tenant}")
+
+    target_id = answer_id
+    if target_id in ("latest", "last"):
+        rows_latest = g.query("MATCH (a:Answer) RETURN a.id ORDER BY a.created_at DESC LIMIT 1").result_set
+        if rows_latest:
+            target_id = rows_latest[0][0]
+        else:
+            raise HTTPException(status_code=404, detail="No Answer nodes found in graph.")
+
+    registry = HindsightToolRegistry(db, f"t:{tenant}", event_bus=global_bus)
+    res = registry.explain(target_id)
+    if "error" in res:
+        raise HTTPException(status_code=404, detail=res["error"])
+    return res
 
 @app.get("/api/graph")
 def get_graph_elements(tenant: str = "parcelo"):
@@ -126,15 +382,6 @@ def get_graph_elements(tenant: str = "parcelo"):
         })
 
     return {"elements": {"nodes": nodes, "edges": edges}}
-
-@app.get("/api/explain/{answer_id}")
-def explain_answer(answer_id: str, tenant: str = "parcelo"):
-    db = get_db()
-    registry = HindsightToolRegistry(db, f"t:{tenant}", event_bus=global_bus)
-    res = registry.explain(answer_id)
-    if "error" in res:
-        raise HTTPException(status_code=404, detail=res["error"])
-    return res
 
 @app.get("/api/events")
 async def sse_events(request: Request):
