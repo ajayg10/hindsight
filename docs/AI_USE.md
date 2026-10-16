@@ -47,5 +47,14 @@ Google Antigravity assisted with:
 - Enforcing architectural isolation via AST analysis in `scripts/test_phase3.py` ensuring agents never import `falkordb`, `redis`, or run raw Cypher.
 - Running and verifying the headless end-to-end storm story reproduction and kill-agent lease reclaim in `scripts/test_phase3.py` against live FalkorDB engine.
 
+## Phase 4a — 2026-10-16
+
+Google Antigravity assisted with:
+- Implementing CLI and live storm runner in `scripts/run_storm.py` supporting both `--mode demo` (paced output) and `--mode fast`.
+- Implementing FastAPI war room backend in `backend/app/main.py` providing `/api/graph` (Cytoscape elements), `/api/events` (SSE real-time stream), `/api/storm/run`, `/api/storm/approve`, and `/api/explain/{answer_id}`.
+- Building modern, responsive war room UI (`frontend/index.html`, `frontend/index.css`, `frontend/app.js`) with Cytoscape.js interactive topology canvas, 6 agent crew lanes, live SSE terminal ticker, and operator approval gate.
+- Updating `docker-compose.yml` to declare the `web` service on port 8000.
+- Writing and executing `scripts/test_phase4a.py` verifying all endpoints, Cytoscape graph serialization, and storm execution.
+
 
 

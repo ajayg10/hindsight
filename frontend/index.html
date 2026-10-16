@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hindsight — Operational Graph War Room & Agent Incident Crew</title>
+  <meta name="description" content="Autonomous incident coordination and organizational memory powered by FalkorDB. Connected Data, Memory & Coordination, Company Brain.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.0/cytoscape.min.js"></script>
+  <link rel="stylesheet" href="/static/index.css">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo-mark">
+        <span class="pulse-dot"></span>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>HINDSIGHT</h1>
+        <span class="brand-tag">Incident War Room &bull; FalkorDB</span>
+      </div>
+    </div>
+
+    <!-- Track Badges -->
+    <div class="track-badges">
+      <span class="track-pill track-01" title="Track 01: Agents That Act on Connected Data">01 Connected Data</span>
+      <span class="track-pill track-02" title="Track 02: Agent Memory & Coordination">02 Memory & Coord</span>
+      <span class="track-pill track-03" title="Track 03: Company Brain">03 Company Brain</span>
+    </div>
+
+    <!-- Engine & Cluster Status -->
+    <div class="status-cluster">
+      <div class="metric-chip">
+        <span class="chip-label">ENGINE</span>
+        <span class="chip-val green" id="db-status">FalkorDB Live</span>
+      </div>
+      <div class="metric-chip">
+        <span class="chip-label">READ LATENCY (N=20)</span>
+        <span class="chip-val" id="latency-chip">p50: 0.45ms</span>
+      </div>
+      <div class="metric-chip">
+        <span class="chip-label">GRAPH</span>
+        <span class="chip-val cyan">t:parcelo (58 svcs)</span>
+      </div>
+    </div>
+
+    <!-- Actions & Storm Trigger -->
+    <div class="actions">
+      <div class="mode-select">
+        <label for="pacing-mode">Pacing:</label>
+        <select id="pacing-mode">
+          <option value="demo" selected>Demo Pacing (~60s)</option>
+          <option value="fast">Fast Mode (~3s)</option>
+        </select>
+      </div>
+      <button id="btn-run-storm" class="btn btn-primary">
+        <svg class="bolt-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+        <span id="btn-run-text">Run the Storm</span>
+      </button>
+      <button id="btn-reset-graph" class="btn btn-ghost" title="Reset Graph to Initial Topology">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main War Room Grid Layout -->
+  <main class="war-room-container">
+    <!-- Center Left: Topology Graph Canvas -->
+    <section class="viewport-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="live-indicator"></span>
+          <h2>Topology Dependency Graph</h2>
+          <span class="node-count" id="topo-node-count">58 Services &bull; Active DEPENDS_ON</span>
+        </div>
+        <div class="graph-legend">
+          <span class="legend-item"><span class="legend-dot root"></span> Root Cause</span>
+          <span class="legend-item"><span class="legend-dot alerting"></span> Alerting (9)</span>
+          <span class="legend-item"><span class="legend-dot blast"></span> Blast Radius (14)</span>
+          <span class="legend-item"><span class="legend-dot choke"></span> Choke Point</span>
+          <span class="legend-item"><span class="legend-dot healthy"></span> Healthy</span>
+        </div>
+      </div>
+
+      <div id="cy" class="cy-canvas"></div>
+
+      <!-- Floating Node Inspector HUD -->
+      <div id="node-hud" class="node-hud hidden">
+        <div class="hud-header">
+          <span class="hud-title" id="hud-name">service-name</span>
+          <button id="hud-close" class="hud-close">&times;</button>
+        </div>
+        <div class="hud-body">
+          <div class="hud-row"><span class="hud-k">Service ID:</span><span class="hud-v" id="hud-id">-</span></div>
+          <div class="hud-row"><span class="hud-k">Tier:</span><span class="hud-v" id="hud-tier">-</span></div>
+          <div class="hud-row"><span class="hud-k">Revenue Impact:</span><span class="hud-v" id="hud-rev">-</span></div>
+          <div class="hud-row"><span class="hud-k">PageRank:</span><span class="hud-v" id="hud-pr">-</span></div>
+          <div class="hud-row"><span class="hud-k">Betweenness:</span><span class="hud-v" id="hud-bw">-</span></div>
+          <div class="hud-row"><span class="hud-k">Owning Team:</span><span class="hud-v" id="hud-team">-</span></div>
+          <div class="hud-row"><span class="hud-k">Status:</span><span class="hud-v" id="hud-status">-</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: Agent Crew Lanes & Incident Board -->
+    <aside class="crew-panel">
+      <div class="panel-header">
+        <h2>Agent Crew Lanes (Graph-Coordinated)</h2>
+        <span class="badge" id="incident-badge">Idle</span>
+      </div>
+
+      <div class="crew-lanes" id="crew-lanes">
+        <!-- Sentinel Lane -->
+        <div class="crew-card" id="lane-sentinel">
+          <div class="card-head">
+            <div class="agent-tag">
+              <span class="agent-icon sentinel-icon">⚡</span>
+              <span class="agent-name">Sentinel</span>
+            </div>
+            <span class="lane-status" id="status-sentinel">Monitoring</span>
+          </div>
+          <div class="card-content" id="content-sentinel">
+            <p class="lane-desc">Awaiting incoming telemetry streams...</p>
+          </div>
+        </div>
+
+        <!-- Investigator A Lane -->
+        <div class="crew-card" id="lane-inv-a">
+          <div class="card-head">
+            <div class="agent-tag">
+              <span class="agent-icon inv-icon">A</span>
+              <span class="agent-name">Investigator-A</span>
+            </div>
+            <span class="lane-status" id="status-inv-a">Idle</span>
+          </div>
+          <div class="card-content" id="content-inv-a">
+            <p class="lane-desc">Heuristic: Common Upstream Dependency (Q2)</p>
+          </div>
+        </div>
+
+        <!-- Investigator B Lane -->
+        <div class="crew-card" id="lane-inv-b">
+          <div class="card-head">
+            <div class="agent-tag">
+              <span class="agent-icon inv-icon-b">B</span>
+              <span class="agent-name">Investigator-B</span>
+            </div>
+            <span class="lane-status" id="status-inv-b">Idle</span>
+          </div>
+          <div class="card-content" id="content-inv-b">
+            <p class="lane-desc">Heuristic: Centrality / Betweenness Ranking</p>
+          </div>
+        </div>
+
+        <!-- Conflict Resolution Card -->
+        <div class="crew-card conflict-card" id="lane-conflict">
+          <div class="card-head">
+            <div class="agent-tag">
+              <span class="agent-icon conflict-icon">⚖</span>
+              <span class="agent-name">Conflict Resolution (Q10)</span>
+            </div>
+            <span class="lane-status" id="status-conflict">No Conflict</span>
+          </div>
+          <div class="card-content" id="content-conflict">
+            <p class="lane-desc">Graph path subsumption evaluates upstream cause vs downstream symptom.</p>
+          </div>
+        </div>
+
+        <!-- Responder Lane & Approval Gate -->
+        <div class="crew-card" id="lane-responder">
+          <div class="card-head">
+            <div class="agent-tag">
+              <span class="agent-icon responder-icon">🛡</span>
+              <span class="agent-name">Responder</span>
+            </div>
+            <span class="lane-status" id="status-responder">Idle</span>
+          </div>
+          <div class="card-content" id="content-responder">
+            <p class="lane-desc">Recalls procedures from graph memory & applies blast guardrails.</p>
+          </div>
+          <!-- Operator Gate Action Bar -->
+          <div id="gate-action-box" class="gate-box hidden">
+            <div class="gate-warning">
+              <span class="gate-icon">⚠</span>
+              <span>Blast Radius Guardrail: 14 services ($3,000/min) requires human sign-off.</span>
+            </div>
+            <button id="btn-approve-gate" class="btn btn-warning">Approve & Execute R-12</button>
+          </div>
+        </div>
+
+        <!-- Concierge Lane -->
+        <div class="crew-card" id="lane-concierge">
+          <div class="card-head">
+            <div class="agent-tag">
+              <span class="agent-icon concierge-icon">👤</span>
+              <span class="agent-name">Concierge</span>
+            </div>
+            <span class="lane-status" id="status-concierge">Idle</span>
+          </div>
+          <div class="card-content" id="content-concierge">
+            <p class="lane-desc">Determines service ownership and routes available experts.</p>
+          </div>
+        </div>
+
+        <!-- Librarian Lane -->
+        <div class="crew-card" id="lane-librarian">
+          <div class="card-head">
+            <div class="agent-tag">
+              <span class="agent-icon librarian-icon">📚</span>
+              <span class="agent-name">Librarian Worker</span>
+            </div>
+            <span class="lane-status" id="status-librarian">Idle</span>
+          </div>
+          <div class="card-content" id="content-librarian">
+            <p class="lane-desc">Audits documentation staleness, creates update tasks & sweeps decay.</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Bottom Real-Time Event Stream Terminal -->
+  <footer class="bottom-terminal">
+    <div class="terminal-bar">
+      <div class="term-left">
+        <span class="term-prompt">&gt;_</span>
+        <span class="term-title">Real-Time Coordination Event Stream (SSE)</span>
+      </div>
+      <div class="term-stats">
+        <span id="event-counter">0 Events</span>
+        <button id="btn-clear-term" class="term-clear-btn">Clear</button>
+      </div>
+    </div>
+    <div class="terminal-feed" id="terminal-feed">
+      <div class="feed-entry system">[SYSTEM] Connected to SSE event stream at /api/events. Waiting for storm initiation...</div>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -85,7 +85,13 @@ Actions will be simulated and approval gated.
    - Librarian worker loop: audits staleness, opens 3 doc update tasks, sweeps decay and PageRank.
    - Answer provenance: every answer creates an `Answer` node with `USED` evidence edges; `explain(answer_id)` returns evidence subgraph, Cypher text, and policy chip.
    - Event bus: 37 typed golden events in strict sequence.
-4. API, SSE and war-room UI (4a: Cytoscape graph, SSE, crew lanes, run-the-storm; 4b: Memory panels, time scrubber, Why drawer, Graph OFF baseline).
+4. API, SSE and war-room UI:
+   - 4a. Cytoscape graph, SSE real-time stream, crew lanes, and storm runner (PASSED).
+     - Live interactive Cytoscape topology canvas rendering 58 services with health states, blast highlights, and choke points.
+     - Real-time Server-Sent Events (SSE) stream via `/api/events`.
+     - 6 reactive crew lanes (Sentinel, Investigator-A/B, Conflict Resolution, Responder with operator approval gate, Concierge, Librarian).
+     - Interactive storm runner CLI (`python scripts/run_storm.py --mode demo`).
+   - 4b. Memory panels, time scrubber, Why drawer, Graph OFF baseline (TF-IDF).
 5. Evaluation, scale and deployment.
 6. Submission and bug bash; feature freeze Oct 18, 18:00 IST.
 
