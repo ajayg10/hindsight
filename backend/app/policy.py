@@ -56,6 +56,34 @@ POLICY_RULES: Dict[str, PolicyRule] = {
         reason="Procedure targets retired infrastructure (cache-a superseded by change-adr-17); refuse execution despite high historical win rate and select valid alternative (R-12).",
         chip="ADR Invalidation Refusal"
     ),
+    "RULE-06-OWNERSHIP-ROUTING": PolicyRule(
+        rule_id="RULE-06-OWNERSHIP-ROUTING",
+        condition="Service incident requires owning team identification and escalation channel",
+        tool="who_owns",
+        reason="Traverse OWNS and MEMBER_OF graph relationships to identify owning team, Slack channels, and responsible engineers.",
+        chip="Team Ownership"
+    ),
+    "RULE-07-EXPERT-ROUTING": PolicyRule(
+        rule_id="RULE-07-EXPERT-ROUTING",
+        condition="Incident triage requires domain expert with active availability",
+        tool="who_knows",
+        reason="Query EXPERT_IN scores and on-call/leave status to dynamically route around absent engineers to active experts.",
+        chip="Expert Routing"
+    ),
+    "RULE-08-DECISION-PROVENANCE": PolicyRule(
+        rule_id="RULE-08-DECISION-PROVENANCE",
+        condition="Service architecture or failure mode requires historical context from ADRs and discussion threads",
+        tool="trace_decision",
+        reason="Trace architectural decision records (ADRs), discussion threads, and authors across organizational memory graph.",
+        chip="Decision Provenance"
+    ),
+    "RULE-09-DOC-STALENESS-AUDIT": PolicyRule(
+        rule_id="RULE-09-DOC-STALENESS-AUDIT",
+        condition="Structural dependency changes occur that invalidate existing documentation and runbooks",
+        tool="staleness_audit",
+        reason="Audit runbooks and documentation verified prior to structural graph dependency modifications and open remediation tasks.",
+        chip="Doc Staleness Audit"
+    ),
 }
 
 def get_rule(rule_id: str) -> PolicyRule:

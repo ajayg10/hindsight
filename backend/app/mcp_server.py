@@ -366,7 +366,8 @@ class HindsightToolRegistry:
 
         evidence = [("Person", c["person"]) for c in candidates]
         summary = f"Expert routing for {service_id}: Primary {primary['person']} (score {primary['score']:.2f}) on leave -> dynamically rerouted to {routed['person']} (score {routed['score']:.2f})."
-        ans_id = self._record_answer(target_g, "who_knows", "q04_who_knows.cypher", "RULE-02-ROOT-CAUSE", summary, evidence)
+        rule = get_rule("RULE-07-EXPERT-ROUTING")
+        ans_id = self._record_answer(target_g, "who_knows", "q04_who_knows.cypher", rule.rule_id, summary, evidence)
 
         return {
             "answer_id": ans_id,
@@ -376,7 +377,9 @@ class HindsightToolRegistry:
             "routed_expert": routed["person"] if routed else None,
             "routed_score": routed["score"] if routed else 0.0,
             "candidates": candidates,
-            "summary": summary
+            "summary": summary,
+            "policy_rule_id": rule.rule_id,
+            "policy_chip": rule.chip
         }
 
     def who_owns(self, service_id: str = "cache-b", graph_name: Optional[str] = None) -> Dict[str, Any]:
@@ -400,8 +403,15 @@ class HindsightToolRegistry:
             }
             evidence.append(("Team", rows[0][0]))
 
-        ans_id = self._record_answer(target_g, "who_owns", "internal_ownership", "RULE-02-ROOT-CAUSE", f"Owning team: {team_info.get('team_name', 'None')}", evidence)
-        return {"answer_id": ans_id, "service_id": service_id, "owner": team_info}
+        rule = get_rule("RULE-06-OWNERSHIP-ROUTING")
+        ans_id = self._record_answer(target_g, "who_owns", "internal_ownership", rule.rule_id, f"Owning team: {team_info.get('team_name', 'None')}", evidence)
+        return {
+            "answer_id": ans_id,
+            "service_id": service_id,
+            "owner": team_info,
+            "policy_rule_id": rule.rule_id,
+            "policy_chip": rule.chip
+        }
 
     def trace_decision(self, service_id: str = "cache-b", decision_id: Optional[str] = None, graph_name: Optional[str] = None) -> Dict[str, Any]:
         """Q5 traces decision provenance back to ADR, thread, and author."""
@@ -436,8 +446,16 @@ class HindsightToolRegistry:
             evidence.append(("Person", author))
 
         summary = f"Decision provenance traced for {service_id}: {decision_id} authored by Priya Sharma."
-        ans_id = self._record_answer(target_g, "trace_decision", "q05_trace_decision.cypher", "RULE-05-STALE-PROCEDURE-REFUSAL", summary, evidence)
-        return {"answer_id": ans_id, "service_id": service_id, "decision_id": decision_id, "trace": trace}
+        rule = get_rule("RULE-08-DECISION-PROVENANCE")
+        ans_id = self._record_answer(target_g, "trace_decision", "q05_trace_decision.cypher", rule.rule_id, summary, evidence)
+        return {
+            "answer_id": ans_id,
+            "service_id": service_id,
+            "decision_id": decision_id,
+            "trace": trace,
+            "policy_rule_id": rule.rule_id,
+            "policy_chip": rule.chip
+        }
 
     def staleness_audit(self, as_of: Optional[int] = None, graph_name: Optional[str] = None) -> Dict[str, Any]:
         """Finds documentation stale relative to subsequent architectural changes."""
@@ -466,13 +484,16 @@ class HindsightToolRegistry:
             evidence.append(("Doc", r[0]))
 
         summary = f"Staleness audit identified {len(stale_docs)} documents out of date with architectural changes."
-        ans_id = self._record_answer(target_g, "staleness_audit", "staleness_audit.cypher", "RULE-05-STALE-PROCEDURE-REFUSAL", summary, evidence)
+        rule = get_rule("RULE-09-DOC-STALENESS-AUDIT")
+        ans_id = self._record_answer(target_g, "staleness_audit", "staleness_audit.cypher", rule.rule_id, summary, evidence)
 
         return {
             "answer_id": ans_id,
             "stale_docs": stale_docs,
             "count": len(stale_docs),
-            "summary": summary
+            "summary": summary,
+            "policy_rule_id": rule.rule_id,
+            "policy_chip": rule.chip
         }
 
     def explain(self, answer_id: str, graph_name: Optional[str] = None) -> Dict[str, Any]:
@@ -492,7 +513,10 @@ class HindsightToolRegistry:
 
         ans_row = rows[0]
         rule_id = ans_row[3]
-        rule = get_rule(rule_id) if rule_id in list(get_rule(r).rule_id for r in ["RULE-01-SPLIT-STORM", "RULE-02-ROOT-CAUSE", "RULE-03-INVESTIGATE-CONFLICT", "RULE-04-GUARDRAIL-BLAST", "RULE-05-STALE-PROCEDURE-REFUSAL"]) else None
+        try:
+            rule = get_rule(rule_id)
+        except Exception:
+            rule = None
 
         cypher_text = self._get_cypher(ans_row[2])
 

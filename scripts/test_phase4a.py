@@ -48,8 +48,8 @@ def test_phase4a():
     print("\n--- 2. Testing get_policy_rules() ---")
     res = get_policy_rules()
     rules = res["rules"]
-    assert len(rules) == 5, f"Expected 5 rules, got {len(rules)}"
-    print(f"✓ PASS: get_policy_rules() returned 5 deterministic governance rules: {[r['rule_id'] for r in rules]}")
+    assert len(rules) == 9, f"Expected 9 rules, got {len(rules)}"
+    print(f"✓ PASS: get_policy_rules() returned 9 deterministic governance rules: {[r['rule_id'] for r in rules]}")
 
     # 3. Cytoscape graph data
     print("\n--- 3. Testing get_graph_elements() (Cytoscape Elements) ---")
