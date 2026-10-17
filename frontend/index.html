@@ -42,17 +42,29 @@
         <span class="chip-val green" id="db-status">FalkorDB Live</span>
       </div>
       <div class="metric-chip">
-        <span class="chip-label">READ LATENCY (N=20)</span>
-        <span class="chip-val" id="latency-chip">p50: 0.45ms</span>
+        <span class="chip-label">READ LATENCY (LIVE)</span>
+        <span class="chip-val" id="latency-chip">p50: -- ms</span>
       </div>
       <div class="metric-chip">
-        <span class="chip-label">GRAPH</span>
-        <span class="chip-val cyan">t:parcelo (58 svcs)</span>
+        <span class="chip-label">GRAPH COUNTS</span>
+        <span class="chip-val cyan" id="graph-count-chip">-- nodes / -- edges</span>
       </div>
     </div>
 
     <!-- Actions & Storm Trigger -->
     <div class="actions">
+      <!-- Tenant Switcher -->
+      <div class="mode-select tenant-select-wrap">
+        <label for="tenant-select">TENANT:</label>
+        <select id="tenant-select" title="Switch isolated company graph tenant">
+          <option value="parcelo" selected>t:parcelo (Parcelo E-Commerce)</option>
+          <option value="blueharbor">t:blueharbor (BlueHarbor Freight)</option>
+          <option value="acme">t:acme (Acme Logistics)</option>
+          <option value="novastream">t:novastream (NovaStream Media)</option>
+          <option value="finflow">t:finflow (FinFlow Settlement)</option>
+        </select>
+      </div>
+
       <!-- Time Scrubber / As-Of Selector -->
       <div class="mode-select time-scrubber">
         <label for="timeline-select">Timeline:</label>

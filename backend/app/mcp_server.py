@@ -429,7 +429,13 @@ class HindsightToolRegistry:
         routed = active[0] if active else primary
 
         evidence = [("Person", c["person"]) for c in candidates]
-        summary = f"Expert routing for {service_id}: Primary {primary['person']} (score {primary['score']:.2f}) on leave -> dynamically rerouted to {routed['person']} (score {routed['score']:.2f})."
+        if primary and primary.get("on_leave") and routed and routed != primary:
+            summary = f"Expert routing for {service_id}: Primary {primary['person']} (score {primary['score']:.2f}) on leave -> dynamically rerouted to {routed['person']} (score {routed['score']:.2f})."
+        elif primary:
+            summary = f"Expert routing for {service_id}: Primary expert {primary['person']} is active (score {primary['score']:.2f})."
+        else:
+            summary = f"No domain experts recorded for service {service_id}."
+
         rule = get_rule("RULE-07-EXPERT-ROUTING")
         ans_id = self._record_answer(target_g, "who_knows", "q04_who_knows.cypher", rule.rule_id, summary, evidence, persist=persist_answer)
 
@@ -477,6 +483,8 @@ class HindsightToolRegistry:
             "answer_id": ans_id,
             "service_id": service_id,
             "owner": team_info,
+            "team_id": team_info.get("team_id"),
+            "team_name": team_info.get("team_name"),
             "policy_rule_id": rule.rule_id,
             "policy_chip": rule.chip,
             "persisted": persist_answer,

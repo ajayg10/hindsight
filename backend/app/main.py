@@ -69,6 +69,50 @@ storm_state = {
 def health_check():
     return {"status": "ok", "app": "hindsight", "engine": "falkordb"}
 
+@app.get("/api/tenants")
+def get_tenants():
+    """Returns available tenant organizations."""
+    return [
+        {"id": "parcelo", "name": "Parcelo E-Commerce (58 services)"},
+        {"id": "blueharbor", "name": "BlueHarbor Freight & Logistics (12 services)"},
+        {"id": "acme", "name": "Acme Logistics (7 services)"},
+        {"id": "novastream", "name": "NovaStream Media (6 services)"},
+        {"id": "finflow", "name": "FinFlow Settlement (6 services)"}
+    ]
+
+@app.get("/api/stats")
+def get_graph_stats(tenant: str = "parcelo"):
+    """Returns live graph counts (nodes, edges) and measured read latency (p50, p95)."""
+    db = get_db()
+    g = db.select_graph(f"t:{tenant}")
+    
+    samples = []
+    for _ in range(5):
+        t0 = time.perf_counter()
+        g.query("MATCH (s:Service) RETURN count(s)")
+        samples.append((time.perf_counter() - t0) * 1000.0)
+    samples.sort()
+    p50 = samples[len(samples) // 2]
+    p95 = samples[-1]
+
+    node_res = g.query("MATCH (n) RETURN count(n)").result_set
+    edge_res = g.query("MATCH ()-[r]->() RETURN count(r)").result_set
+    service_res = g.query("MATCH (s:Service) RETURN count(s)").result_set
+
+    node_count = int(node_res[0][0]) if node_res else 0
+    edge_count = int(edge_res[0][0]) if edge_res else 0
+    service_count = int(service_res[0][0]) if service_res else 0
+
+    return {
+        "tenant": tenant,
+        "nodes": node_count,
+        "edges": edge_count,
+        "services": service_count,
+        "p50_latency_ms": round(p50, 2),
+        "p95_latency_ms": round(p95, 2),
+        "measured_env": "local container"
+    }
+
 @app.get("/api/policy/rules")
 def get_policy_rules():
     return {"rules": list_rules()}

@@ -9,19 +9,37 @@
 let cy = null;
 let eventCount = 0;
 let evtSource = null;
+let activeTenant = "parcelo";
 
 document.addEventListener("DOMContentLoaded", () => {
-  initCytoscape();
+  initCytoscape(activeTenant);
   initEventStream();
   initControls();
+  updateLiveStats(activeTenant);
+  setInterval(() => updateLiveStats(activeTenant), 4000);
 });
+
+async function updateLiveStats(tenant = "parcelo") {
+  try {
+    const res = await fetch(`/api/stats?tenant=${tenant}`);
+    if (res.ok) {
+      const data = await res.json();
+      const latEl = document.getElementById("latency-chip");
+      const cntEl = document.getElementById("graph-count-chip");
+      if (latEl) latEl.textContent = `p50: ${data.p50_latency_ms}ms (p95: ${data.p95_latency_ms}ms)`;
+      if (cntEl) cntEl.textContent = `${data.nodes} nodes / ${data.edges} edges`;
+    }
+  } catch (err) {
+    console.debug("Stats poll error:", err);
+  }
+}
 
 // -------------------------------------------------------------
 // 1. Cytoscape Graph Visualization
 // -------------------------------------------------------------
-async function initCytoscape() {
+async function initCytoscape(tenant = "parcelo") {
   try {
-    const res = await fetch("/api/graph");
+    const res = await fetch(`/api/graph?tenant=${tenant}`);
     const data = await res.json();
     const elements = data.elements;
 
@@ -167,6 +185,28 @@ async function initCytoscape() {
 
   } catch (err) {
     console.error("Failed to load Cytoscape graph:", err);
+  }
+}
+
+async function loadTenantGraph(tenant) {
+  try {
+    const res = await fetch(`/api/graph?tenant=${tenant}`);
+    const data = await res.json();
+    if (cy && data.elements) {
+      cy.elements().remove();
+      cy.add(data.elements.nodes);
+      cy.add(data.elements.edges);
+      cy.layout({
+        name: "cose",
+        animate: true,
+        animationDuration: 400,
+        padding: 30
+      }).run();
+      const nodeCountEl = document.getElementById("topo-node-count");
+      if (nodeCountEl) nodeCountEl.textContent = `${data.elements.nodes.length} Services • t:${tenant}`;
+    }
+  } catch (err) {
+    console.error("Failed to load tenant graph:", err);
   }
 }
 
@@ -465,6 +505,18 @@ function initControls() {
     eventCount = 0;
     document.getElementById("event-counter").textContent = "0 Events";
   });
+
+  // -----------------------------------------------------------
+  // Phase 3.5: Tenant Switcher
+  // -----------------------------------------------------------
+  const tenantSelect = document.getElementById("tenant-select");
+  if (tenantSelect) {
+    tenantSelect.addEventListener("change", async (e) => {
+      activeTenant = e.target.value;
+      await loadTenantGraph(activeTenant);
+      await updateLiveStats(activeTenant);
+    });
+  }
 
   // -----------------------------------------------------------
   // Phase 4b: Time Scrubber (Counterfactual As-Of Timeline)
