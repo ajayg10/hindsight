@@ -37,6 +37,9 @@ def test_phase4a():
     print("           HINDSIGHT PHASE 4a API & WAR ROOM ACCEPTANCE           ")
     print("=" * 70)
 
+    from gen import generate_full_seed
+    generate_full_seed(get_db(), "t:parcelo")
+
     # 1. Health check
     print("\n--- 1. Testing health_check() ---")
     res = health_check()

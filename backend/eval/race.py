@@ -20,18 +20,17 @@ sys.path.insert(0, str(ROOT / "backend"))
 from app.clock import CoordinationClock
 from falkordb import FalkorDB
 
-def run_race_harness(db, graph_name="spike:race"):
+def run_race_harness(db, graph_name="spike:race", workers=20, tasks=8):
     try:
         db.connection.execute_command("GRAPH.DELETE", graph_name)
     except Exception:
         pass
 
     g = db.select_graph(graph_name)
-    workers, tasks = 20, 8
 
     # Pre-create workers and open tasks
-    g.query("UNWIND range(0, 19) AS i CREATE (:Agent {id: toString(i), role:'investigator', status:'active'})")
-    g.query("UNWIND range(0, 7) AS i CREATE (:Task {id: toString(i), kind:'investigate', status:'open', version:0, lease_until:0})")
+    g.query("UNWIND range(0, $w - 1) AS i CREATE (:Agent {id: toString(i), role:'investigator', status:'active'})", {"w": workers})
+    g.query("UNWIND range(0, $t - 1) AS i CREATE (:Task {id: toString(i), kind:'investigate', status:'open', version:0, lease_until:0})", {"t": tasks})
 
     claim_cypher = (ROOT / "backend/app/queries/q01_claim.cypher").read_text()
     invariant_cypher = (ROOT / "backend/app/queries/claim_invariant.cypher").read_text()
@@ -193,6 +192,8 @@ def run_race_harness(db, graph_name="spike:race"):
         "race_elapsed_ms": elapsed_ms,
         "workers": workers,
         "tasks": tasks,
+        "claims_won": total_wins,
+        "lost_attempts": total_lost,
         "double_claims": double_claims,
         "reclaim_verified": True,
         "read_p50_ms": p50,

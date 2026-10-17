@@ -52,6 +52,7 @@
     </div>
 
     <!-- Actions & Storm Trigger -->
+    <!-- Actions & Controls -->
     <div class="actions">
       <!-- Tenant Switcher -->
       <div class="mode-select tenant-select-wrap">
@@ -65,13 +66,11 @@
         </select>
       </div>
 
-      <!-- Time Scrubber / As-Of Selector -->
-      <div class="mode-select time-scrubber">
-        <label for="timeline-select">Timeline:</label>
-        <select id="timeline-select" title="Toggle between Now and Pre-ADR-17 As-Of topology">
-          <option value="current" selected>Now (Post-ADR-17: cache-b)</option>
-          <option value="pre-adr-17">As-Of (Pre-ADR-17: cache-a)</option>
-        </select>
+      <!-- Draggable Time Scrubber with Q7 Diff Mode -->
+      <div class="mode-select time-scrubber-wrap" title="Drag timeline slider: 0 = Pre-ADR-17, 50 = Q7 Diff Overlay, 100 = Current Now">
+        <label for="timeline-scrubber">Timeline:</label>
+        <input type="range" id="timeline-scrubber" min="0" max="100" value="100" step="50" class="time-range-slider">
+        <span id="timeline-scrubber-label" class="scrubber-badge now">Now</span>
       </div>
 
       <div class="mode-select">
@@ -82,15 +81,35 @@
         </select>
       </div>
 
-      <button id="btn-run-storm" class="btn btn-primary">
+      <button id="btn-run-storm" class="btn btn-primary" title="Trigger full incident storm simulation">
         <svg class="bolt-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
         </svg>
         <span id="btn-run-text">Run the Storm</span>
       </button>
 
+      <!-- Worker Race Button (Cap 32) -->
+      <button id="btn-race" class="btn btn-outline" title="Race 32 concurrent workers for 8 tasks (Zero Double Claims)">
+        <span class="bolt-icon">⚡</span> Race (32)
+      </button>
+
+      <!-- Track 03: Company Brain Questions -->
+      <button id="btn-company-modal" class="btn btn-outline" title="Company Brain: 4 Suggested Intents mapped to MCP tools">
+        <span>🧠 Company Brain</span>
+      </button>
+
+      <!-- Runbooks & Invalidation Guardrails -->
+      <button id="btn-runbooks-modal" class="btn btn-outline" title="View Procedures with Win-Rate Bars and STALE Stamps">
+        <span>📖 Runbooks</span>
+      </button>
+
+      <!-- Fact Ledger (Temporal Audit) -->
+      <button id="btn-facts-modal" class="btn btn-outline" title="Inspect Fact Ledger with Struck-Through Superseded Facts">
+        <span>📜 Fact Ledger</span>
+      </button>
+
       <!-- Advanced Features: Baseline Compare, Memory, Why Drawer -->
-      <button id="btn-baseline-modal" class="btn btn-outline" title="Compare Graph ON vs Graph OFF (TF-IDF)">
+      <button id="btn-baseline-modal" class="btn btn-outline" title="Compare Graph ON vs Graph OFF (Keyword TF-IDF)">
         <span>Graph OFF vs ON</span>
       </button>
 
@@ -123,7 +142,14 @@
   <main class="war-room-container">
     <!-- Center Left: Topology Graph Canvas -->
     <section class="viewport-panel">
-      <div class="panel-header">
+      <!-- Q7 Diff Overlay Banner -->
+      <div id="diff-overlay-banner" class="diff-overlay-banner hidden">
+        <div class="diff-banner-content">
+          <span class="diff-tag">Q7 DIFF OVERLAY</span>
+          <span id="diff-banner-text">ADR-17 Architectural Migration: <strong class="text-green">+1 added edge</strong> (checkout-api &rarr; cache-b) | <strong class="text-red">-1 removed edge</strong> (checkout-api &rarr; cache-a ended by change-adr-17) | <strong class="text-amber">cache-a retired</strong></span>
+        </div>
+        <button id="diff-banner-close" class="diff-banner-close">&times;</button>
+      </div>      <div class="panel-header">
         <div class="panel-title">
           <span class="live-indicator"></span>
           <h2>Topology Dependency Graph</h2>
@@ -187,7 +213,10 @@
               <span class="agent-icon inv-icon">A</span>
               <span class="agent-name">Investigator-A</span>
             </div>
-            <span class="lane-status" id="status-inv-a">Idle</span>
+            <div class="lane-head-actions">
+              <button id="btn-kill-inv-a" class="btn-kill-agent" title="Operator Kill Signal: simulate crash, lease expiry, and atomic reclaim">⚡ Kill Agent</button>
+              <span class="lane-status" id="status-inv-a">Idle</span>
+            </div>
           </div>
           <div class="card-content" id="content-inv-a">
             <p class="lane-desc">Heuristic: Common Upstream Dependency (Q2)</p>
@@ -201,7 +230,10 @@
               <span class="agent-icon inv-icon-b">B</span>
               <span class="agent-name">Investigator-B</span>
             </div>
-            <span class="lane-status" id="status-inv-b">Idle</span>
+            <div class="lane-head-actions">
+              <button id="btn-kill-inv-b" class="btn-kill-agent" title="Operator Kill Signal: simulate crash, lease expiry, and atomic reclaim">⚡ Kill Agent</button>
+              <span class="lane-status" id="status-inv-b">Idle</span>
+            </div>
           </div>
           <div class="card-content" id="content-inv-b">
             <p class="lane-desc">Heuristic: Centrality / Betweenness Ranking</p>
@@ -451,8 +483,178 @@
         </div>
       </div>
     </div>
+  <!-- Company Brain Questions Modal (Track 03) -->
+  <div id="company-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="track-pill track-03">Track 03: Company Brain</span>
+          <h3>Company Brain Questions (MCP Tools & Policy Rules)</h3>
+        </div>
+        <button id="company-close" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">
+          Query organizational knowledge directly over the FalkorDB graph. Four suggested intents map directly to native MCP tools and evaluation policy rules with zero graph mutations on public calls.
+        </p>
+
+        <!-- Suggested Intents Grid -->
+        <div class="intent-grid">
+          <button class="intent-btn" data-intent="who_owns" data-service="cache-b">
+            <span class="intent-icon">🏢</span>
+            <div class="intent-text">
+              <strong>1. Who owns cache-b?</strong>
+              <span class="intent-sub">mcp__who_owns &bull; RULE-09 (Service Ownership)</span>
+            </div>
+          </button>
+
+          <button class="intent-btn" data-intent="who_knows" data-service="cache-b">
+            <span class="intent-icon">👤</span>
+            <div class="intent-text">
+              <strong>2. Who knows cache-b (on-call)?</strong>
+              <span class="intent-sub">mcp__who_knows &bull; RULE-06 (Expert Routing & Leave)</span>
+            </div>
+          </button>
+
+          <button class="intent-btn" data-intent="trace_decision" data-service="cache-b">
+            <span class="intent-icon">📜</span>
+            <div class="intent-text">
+              <strong>3. Why does checkout depend on cache-b?</strong>
+              <span class="intent-sub">mcp__trace_decision &bull; RULE-07 (ADR Decision Lineage)</span>
+            </div>
+          </button>
+
+          <button class="intent-btn" data-intent="staleness_audit" data-service="">
+            <span class="intent-icon">📚</span>
+            <div class="intent-text">
+              <strong>4. Audit stale operational documents</strong>
+              <span class="intent-sub">mcp__staleness_audit &bull; RULE-08 (Doc Staleness Audit)</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Custom Query Service Selector -->
+        <div class="company-custom-bar">
+          <span class="input-label">Target Service:</span>
+          <select id="company-service-select" class="query-select">
+            <option value="cache-b" selected>cache-b (Session Cache Cluster)</option>
+            <option value="checkout-api">checkout-api (Checkout API Gateway)</option>
+            <option value="orders-db">orders-db (Orders Primary DB)</option>
+            <option value="cartservice">cartservice (Cart Microservice)</option>
+            <option value="paymentservice">paymentservice (Merchant Payment Gateway)</option>
+            <option value="cache-a">cache-a (Legacy Redis Node - Retired)</option>
+          </select>
+        </div>
+
+        <!-- Query Output Card -->
+        <div id="company-result-card" class="company-result-card hidden">
+          <div class="cresult-header">
+            <div class="cresult-badge-row">
+              <span id="company-tool-badge" class="badge badge-tool">mcp__who_owns</span>
+              <span id="company-policy-badge" class="badge badge-policy">RULE-09</span>
+            </div>
+            <button id="btn-view-in-why" class="btn-xs btn-outline">Inspect in Why Drawer &rarr;</button>
+          </div>
+          <div class="cresult-body">
+            <h4 id="company-answer-headline">Answer Headline</h4>
+            <div id="company-answer-body" class="cresult-text">Answer content...</div>
+            <div class="cresult-meta" id="company-answer-meta"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fact Ledger Modal (Temporal Audit & Struck-Through Superseded Facts) -->
+  <div id="facts-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="track-pill track-02">Track 02: Memory & Coordination</span>
+          <h3>Temporal Fact Ledger (Q6 Applied Triples & Supercedence)</h3>
+        </div>
+        <button id="facts-close" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">
+          Every architectural change applies immutable fact triples with valid_from and valid_to timestamps. Superseded facts are preserved with explicit <code>:SUPERSEDES</code> relationships and rendered struck-through to maintain complete organizational auditability.
+        </p>
+
+        <div class="facts-filter-bar">
+          <span class="input-label">Filter Status:</span>
+          <button class="filter-chip active" data-fact-filter="all">All Facts</button>
+          <button class="filter-chip" data-fact-filter="current">Current Only</button>
+          <button class="filter-chip" data-fact-filter="superseded">Superseded Only</button>
+        </div>
+
+        <div class="facts-table-container">
+          <div id="facts-list" class="facts-list">
+            <div class="mem-item loading">Loading fact ledger from FalkorDB...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Runbooks & Invalidation Guardrails Modal -->
+  <div id="runbooks-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="track-pill track-01">Track 01 & Track 02</span>
+          <h3>Runbook Procedures & Architectural Guardrails</h3>
+        </div>
+        <button id="runbooks-close" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">
+          Operational runbooks carry historical win rates and validation timestamps. When an architectural change modifies a target service, Hindsight traverses <code>:AFFECTS</code> and <code>:TARGETS</code> edges to stamp outdated procedures as <strong>STALE</strong> and refuse them under RULE-05.
+        </p>
+
+        <div id="runbooks-grid" class="runbooks-grid">
+          <div class="mem-item loading">Loading runbooks from FalkorDB...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Worker Race Results Modal (Cap 32) -->
+  <div id="race-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="track-pill track-02">Track 02: Coordination Benchmark</span>
+          <h3>Concurrent Worker Race (N=32)</h3>
+        </div>
+        <button id="race-close" class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="race-stats-banner">
+          <div class="race-stat-box green-tint">
+            <span class="rstat-label">CLAIMS WON</span>
+            <span class="rstat-num" id="race-won">8</span>
+          </div>
+          <div class="race-stat-box amber-tint">
+            <span class="rstat-label">LOST ATTEMPTS</span>
+            <span class="rstat-num" id="race-lost">24</span>
+          </div>
+          <div class="race-stat-box purple-tint">
+            <span class="rstat-label">DOUBLE CLAIMS</span>
+            <span class="rstat-num green-text" id="race-double">STRICTLY 0</span>
+          </div>
+          <div class="race-stat-box">
+            <span class="rstat-label">ELAPSED TIME</span>
+            <span class="rstat-num" id="race-time">-- ms</span>
+          </div>
+        </div>
+        <div class="race-message-box" id="race-message">
+          Executing atomic worker claim benchmark across 32 concurrent threads...
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>
 </body>
 </html>
+

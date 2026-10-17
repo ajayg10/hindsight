@@ -27,6 +27,8 @@ EVENT_TYPES = {
     "alert",
     "task_claimed",
     "lease_expired",
+    "agent_killed",
+    "worker_race",
     "handoff",
     "hypothesis",
     "conflict",

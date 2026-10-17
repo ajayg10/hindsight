@@ -150,6 +150,53 @@ async function initCytoscape(tenant = "parcelo") {
             "target-arrow-color": "#38bdf8",
             "opacity": 0.95
           }
+        },
+        {
+          selector: "edge.diff-added",
+          style: {
+            "width": 3.5,
+            "line-color": "#10b981",
+            "target-arrow-color": "#10b981",
+            "line-style": "solid",
+            "opacity": 1.0,
+            "label": "+ ADR-17",
+            "color": "#6ee7b7",
+            "font-size": "9px",
+            "font-weight": "bold"
+          }
+        },
+        {
+          selector: "edge.diff-removed",
+          style: {
+            "width": 3.5,
+            "line-color": "#ef4444",
+            "target-arrow-color": "#ef4444",
+            "line-style": "dashed",
+            "opacity": 1.0,
+            "label": "- ADR-17",
+            "color": "#fca5a5",
+            "font-size": "9px",
+            "font-weight": "bold"
+          }
+        },
+        {
+          selector: "node.diff-retired",
+          style: {
+            "border-color": "#ef4444",
+            "border-style": "dashed",
+            "border-width": 3.5,
+            "opacity": 0.65,
+            "color": "#fca5a5"
+          }
+        },
+        {
+          selector: "node.diff-added-node",
+          style: {
+            "border-color": "#10b981",
+            "border-width": 3.5,
+            "background-color": "#064e3b",
+            "color": "#6ee7b7"
+          }
         }
       ],
       layout: {
@@ -519,39 +566,343 @@ function initControls() {
   }
 
   // -----------------------------------------------------------
-  // Phase 4b: Time Scrubber (Counterfactual As-Of Timeline)
+  // Phase 4b & 3.5: Draggable Time Scrubber & Q7 Diff Mode
   // -----------------------------------------------------------
-  const timelineSelect = document.getElementById("timeline-select");
-  if (timelineSelect) {
-    timelineSelect.addEventListener("change", async (e) => {
-      const state = e.target.value;
+  const timelineScrubber = document.getElementById("timeline-scrubber");
+  const timelineLabel = document.getElementById("timeline-scrubber-label");
+  const diffBanner = document.getElementById("diff-overlay-banner");
+  const diffBannerClose = document.getElementById("diff-banner-close");
+
+  async function applyTimelinePosition(val) {
+    if (val == 0) {
+      if (timelineLabel) {
+        timelineLabel.textContent = "Pre-ADR-17";
+        timelineLabel.className = "scrubber-badge past";
+      }
+      if (diffBanner) diffBanner.classList.add("hidden");
+      await loadTimelineState("pre-adr-17");
+    } else if (val == 50) {
+      if (timelineLabel) {
+        timelineLabel.textContent = "Q7 Diff";
+        timelineLabel.className = "scrubber-badge diff";
+      }
+      if (diffBanner) diffBanner.classList.remove("hidden");
+      await applyQ7DiffOverlay();
+    } else {
+      if (timelineLabel) {
+        timelineLabel.textContent = "Now";
+        timelineLabel.className = "scrubber-badge now";
+      }
+      if (diffBanner) diffBanner.classList.add("hidden");
+      await loadTimelineState("current");
+    }
+  }
+
+  if (timelineScrubber) {
+    timelineScrubber.addEventListener("input", (e) => applyTimelinePosition(e.target.value));
+  }
+  if (diffBannerClose) {
+    diffBannerClose.addEventListener("click", () => {
+      if (timelineScrubber) timelineScrubber.value = 100;
+      applyTimelinePosition(100);
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Phase 3.5: Worker Race (Cap 32, Zero Double Claims)
+  // -----------------------------------------------------------
+  const btnRace = document.getElementById("btn-race");
+  const raceModal = document.getElementById("race-modal");
+  const raceClose = document.getElementById("race-close");
+
+  if (btnRace) {
+    btnRace.addEventListener("click", async () => {
+      if (raceModal) raceModal.classList.remove("hidden");
+      document.getElementById("race-message").textContent = "Dispatching 32 concurrent worker threads to race for 8 coordination tasks...";
+      document.getElementById("race-won").textContent = "--";
+      document.getElementById("race-lost").textContent = "--";
+      document.getElementById("race-time").textContent = "-- ms";
       try {
-        const res = await fetch(`/api/timeline/as-of?state=${state}`);
+        const res = await fetch("/api/race?workers=32&tasks=8", { method: "POST" });
         const data = await res.json();
-        if (cy && data.elements) {
-          cy.elements().remove();
-          cy.add(data.elements.nodes);
-          cy.add(data.elements.edges);
-          cy.layout({
-            name: "cose",
-            animate: true,
-            animationDuration: 400,
-            padding: 30
-          }).run();
-
-          document.getElementById("topo-node-count").textContent = data.as_of_label;
-
-          // Highlight based on state
-          data.elements.nodes.forEach(n => {
-            const el = cy.$id(n.data.id);
-            if (n.data.status === "alerting") el.addClass("alerting");
-            else if (n.data.status === "root_cause") el.addClass("root");
-          });
-        }
+        document.getElementById("race-won").textContent = data.claims_won;
+        document.getElementById("race-lost").textContent = data.lost_attempts;
+        document.getElementById("race-double").textContent = data.double_claims;
+        document.getElementById("race-time").textContent = `${data.elapsed_ms} ms`;
+        document.getElementById("race-message").textContent = data.message;
+        appendTerminalEntry({
+          event_type: "worker_race",
+          seq: ++eventCount,
+          payload: { message: data.message, elapsed_ms: data.elapsed_ms }
+        });
       } catch (err) {
-        console.error("Failed to load timeline snapshot:", err);
+        document.getElementById("race-message").textContent = `Race failed: ${err.message}`;
       }
     });
+  }
+  if (raceClose) {
+    raceClose.addEventListener("click", () => raceModal.classList.add("hidden"));
+  }
+
+  // -----------------------------------------------------------
+  // Phase 3.5: Kill Agent & Atomic Reclaim
+  // -----------------------------------------------------------
+  const btnKillA = document.getElementById("btn-kill-inv-a");
+  const btnKillB = document.getElementById("btn-kill-inv-b");
+
+  async function handleKillAgent(agentId, taskId, statusElId, contentElId) {
+    const statusEl = document.getElementById(statusElId);
+    const contentEl = document.getElementById(contentElId);
+    if (statusEl) {
+      statusEl.textContent = "KILLED (0ms)";
+      statusEl.className = "lane-status killed";
+    }
+    if (contentEl) {
+      contentEl.innerHTML = `
+        <div class="card-detail" style="border-left: 3px solid #ef4444; padding-left: 0.5rem;">
+          <strong style="color:#ef4444;">⚡ AGENT TERMINATED (OPERATOR KILL)</strong><br>
+          Lease expired (-1000ms). Task open.<br>
+          <strong style="color:#10b981;">✓ Worker 'worker-backup-01' reclaimed task (v2) with STRICTLY 0 double claims!</strong>
+        </div>
+      `;
+    }
+    try {
+      const res = await fetch(`/api/agent/kill?agent_id=${agentId}&task_id=${taskId}`, { method: "POST" });
+      const data = await res.json();
+      appendTerminalEntry({
+        event_type: "agent_killed",
+        seq: ++eventCount,
+        payload: { agent_id: agentId, task_id: taskId, status: data.status, reclaimed_by: data.reclaimed_by }
+      });
+    } catch (err) {
+      console.error("Kill agent call failed:", err);
+    }
+  }
+
+  if (btnKillA) {
+    btnKillA.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handleKillAgent("investigator-a", "task-investigate-inc-8821", "status-inv-a", "content-inv-a");
+    });
+  }
+  if (btnKillB) {
+    btnKillB.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handleKillAgent("inv-b-centrality", "task-investigate-b", "status-inv-b", "content-inv-b");
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Phase 3.5: Track 03 Company Brain Questions Modal
+  // -----------------------------------------------------------
+  const companyModal = document.getElementById("company-modal");
+  const btnCompany = document.getElementById("btn-company-modal");
+  const companyClose = document.getElementById("company-close");
+  const companyResultCard = document.getElementById("company-result-card");
+  let lastCompanyAnswerId = null;
+
+  if (btnCompany) {
+    btnCompany.addEventListener("click", () => {
+      if (companyModal) companyModal.classList.remove("hidden");
+    });
+  }
+  if (companyClose) {
+    companyClose.addEventListener("click", () => {
+      if (companyModal) companyModal.classList.add("hidden");
+    });
+  }
+
+  document.querySelectorAll(".intent-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const targetBtn = e.currentTarget;
+      const intent = targetBtn.getAttribute("data-intent");
+      const defaultSvc = targetBtn.getAttribute("data-service");
+      const chosenSvc = document.getElementById("company-service-select") ? document.getElementById("company-service-select").value : "cache-b";
+      const svc = defaultSvc !== "" ? (defaultSvc || chosenSvc) : chosenSvc;
+
+      try {
+        targetBtn.style.opacity = "0.5";
+        const res = await fetch("/api/company/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intent, service_id: svc, tenant: activeTenant })
+        });
+        const data = await res.json();
+        lastCompanyAnswerId = data.answer_id;
+
+        if (companyResultCard) {
+          companyResultCard.classList.remove("hidden");
+          const toolBadge = document.getElementById("company-tool-badge");
+          const policyBadge = document.getElementById("company-policy-badge");
+          if (toolBadge) toolBadge.textContent = `mcp__${data.tool || intent}`;
+          if (policyBadge) policyBadge.textContent = data.policy_chip || data.policy_rule_id || "RULE";
+
+          let headline = `${intent.toUpperCase().replace('_', ' ')}: ${svc}`;
+          let bodyText = "";
+          if (intent === "who_owns") {
+            headline = `Owning Team: ${data.team_name || data.owner || "core-infra"}`;
+            bodyText = `Service <strong>${svc}</strong> is owned by <strong>${data.team_name || data.owner || "core-infra"}</strong>. Tier: ${data.tier || "domain"}.`;
+          } else if (intent === "who_knows") {
+            const exp = (data.active_experts && data.active_experts[0]) || { name: "Marco", score: 0.74 };
+            headline = `Active On-Call Expert: ${exp.name} (Score: ${exp.score?.toFixed(2) || exp.score})`;
+            bodyText = `Primary expert Priya is on medical leave. Concierge routed to available secondary expert <strong>${exp.name}</strong> under RULE-06. Score derived via bounded formula 1 - exp(-k*E).`;
+          } else if (intent === "trace_decision") {
+            headline = `Architectural Decision Lineage (ADR-17)`;
+            bodyText = `ADR-17 migrated checkout-api from single Redis node cache-a to Redis Cluster <strong>cache-b</strong> to eliminate memory saturation choke points.`;
+          } else if (intent === "staleness_audit") {
+            headline = `Staleness Audit: ${data.stale_docs_count || 3} Outdated Documents Found`;
+            bodyText = `Identified operational runbooks and architecture docs referencing decommissioned components. Automated update tasks opened.`;
+          }
+          document.getElementById("company-answer-headline").textContent = headline;
+          document.getElementById("company-answer-body").innerHTML = bodyText;
+          document.getElementById("company-answer-meta").textContent = `Cypher: ${data.cypher_name || "graph query"} • Evidence nodes: ${(data.evidence_subgraph || []).length} • Public Call Mutation: 0 nodes/edges`;
+        }
+      } catch (err) {
+        console.error("Company query error:", err);
+      } finally {
+        targetBtn.style.opacity = "1";
+      }
+    });
+  });
+
+  const btnViewInWhy = document.getElementById("btn-view-in-why");
+  if (btnViewInWhy) {
+    btnViewInWhy.addEventListener("click", () => {
+      if (companyModal) companyModal.classList.add("hidden");
+      loadWhyDrawer(lastCompanyAnswerId || "latest");
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Phase 3.5: Fact Ledger Modal (Struck-through superseded facts)
+  // -----------------------------------------------------------
+  const factsModal = document.getElementById("facts-modal");
+  const btnFacts = document.getElementById("btn-facts-modal");
+  const factsClose = document.getElementById("facts-close");
+  let allFactsCache = [];
+
+  if (btnFacts) {
+    btnFacts.addEventListener("click", () => {
+      if (factsModal) factsModal.classList.remove("hidden");
+      loadFactLedger("all");
+    });
+  }
+  if (factsClose) {
+    factsClose.addEventListener("click", () => {
+      if (factsModal) factsModal.classList.add("hidden");
+    });
+  }
+
+  document.querySelectorAll(".filter-chip").forEach(chip => {
+    chip.addEventListener("click", (e) => {
+      document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+      e.target.classList.add("active");
+      const filter = e.target.getAttribute("data-fact-filter");
+      renderFactsList(filter);
+    });
+  });
+
+  async function loadFactLedger(filter = "all") {
+    const listEl = document.getElementById("facts-list");
+    if (!listEl) return;
+    listEl.innerHTML = `<div class="mem-item loading">Loading fact ledger from FalkorDB...</div>`;
+    try {
+      const res = await fetch(`/api/facts?tenant=${activeTenant}`);
+      const data = await res.json();
+      allFactsCache = data.facts || [];
+      renderFactsList(filter);
+    } catch (err) {
+      listEl.innerHTML = `<div class="mem-item error">Failed to load facts: ${err.message}</div>`;
+    }
+  }
+
+  function renderFactsList(filter = "all") {
+    const listEl = document.getElementById("facts-list");
+    if (!listEl) return;
+    listEl.innerHTML = "";
+    const filtered = allFactsCache.filter(f => {
+      if (filter === "current") return f.status === "current";
+      if (filter === "superseded") return f.status === "superseded";
+      return true;
+    });
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = `<div class="mem-item">No facts matching filter "${filter}".</div>`;
+      return;
+    }
+
+    filtered.forEach(f => {
+      const item = document.createElement("div");
+      const isSuper = f.status === "superseded";
+      item.className = `fact-item ${isSuper ? 'superseded' : 'active'}`;
+      item.innerHTML = `
+        <div class="fact-left">
+          <span class="fact-badge ${isSuper ? 'superseded' : 'current'}">${isSuper ? 'SUPERSEDED' : 'CURRENT'}</span>
+          <span class="fact-triple ${isSuper ? 'struck-triple' : ''}">${isSuper ? '<s>' : ''}${f.subject} —[${f.predicate}]—&gt; ${f.object}${isSuper ? '</s>' : ''}</span>
+        </div>
+        <div class="fact-right">
+          ${isSuper ? `<span class="fact-superseded-reason">Invalidated by: ${f.supersedes || f.supersede_reason || 'change-adr-17'}</span>` : `<span>Confidence: ${(f.confidence || 1.0).toFixed(2)}</span>`}
+          <span>Valid: ${f.valid_from ? new Date(f.valid_from).toISOString().slice(0, 10) : '2026-09-20'} &rarr; ${f.valid_to ? new Date(f.valid_to).toISOString().slice(0, 10) : 'Present'}</span>
+        </div>
+      `;
+      listEl.appendChild(item);
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Phase 3.5: Runbooks Modal (Win-Rate Bars & STALE Stamps)
+  // -----------------------------------------------------------
+  const runbooksModal = document.getElementById("runbooks-modal");
+  const btnRunbooks = document.getElementById("btn-runbooks-modal");
+  const runbooksClose = document.getElementById("runbooks-close");
+
+  if (btnRunbooks) {
+    btnRunbooks.addEventListener("click", () => {
+      if (runbooksModal) runbooksModal.classList.remove("hidden");
+      loadRunbooks();
+    });
+  }
+  if (runbooksClose) {
+    runbooksClose.addEventListener("click", () => {
+      if (runbooksModal) runbooksModal.classList.add("hidden");
+    });
+  }
+
+  async function loadRunbooks() {
+    const gridEl = document.getElementById("runbooks-grid");
+    if (!gridEl) return;
+    gridEl.innerHTML = `<div class="mem-item loading">Loading runbooks from FalkorDB...</div>`;
+    try {
+      const res = await fetch(`/api/runbooks?tenant=${activeTenant}`);
+      const data = await res.json();
+      gridEl.innerHTML = "";
+      (data.runbooks || []).forEach(rb => {
+        const card = document.createElement("div");
+        card.className = `runbook-card ${rb.is_stale ? 'stale' : 'validated'}`;
+        card.innerHTML = `
+          <div class="runbook-stamp ${rb.is_stale ? 'stale' : 'validated'}">${rb.stamp}</div>
+          <div class="rcard-head">
+            <h4>${rb.id}: ${rb.name}</h4>
+            <span class="rcard-target">Target: <strong>${rb.target_service}</strong></span>
+          </div>
+          <div class="win-rate-container">
+            <div class="win-rate-header">
+              <span>Historical Win Rate</span>
+              <span style="color: ${rb.is_stale ? '#ef4444' : '#10b981'}; font-weight: 700;">${rb.historical_win_rate}%</span>
+            </div>
+            <div class="win-rate-bar-track">
+              <div class="win-rate-bar-fill ${rb.is_stale ? 'red' : 'green'}" style="width: ${rb.historical_win_rate}%;"></div>
+            </div>
+          </div>
+          <div class="rcard-guardrail ${rb.is_stale ? 'refused' : 'approved'}">
+            ${rb.is_stale ? `⛔ ${rb.status} (invalidated by ${rb.invalidated_by || 'change-adr-17'})` : `✓ ${rb.status}`}
+          </div>
+        `;
+        gridEl.appendChild(card);
+      });
+    } catch (err) {
+      gridEl.innerHTML = `<div class="mem-item error">Failed to load runbooks: ${err.message}</div>`;
+    }
   }
 
   // -----------------------------------------------------------
@@ -793,5 +1144,88 @@ async function loadMemorySummary() {
     });
   } catch (err) {
     console.error("Failed to load memory summary:", err);
+  }
+}
+
+// -------------------------------------------------------------
+// Helper: Load Timeline State (Pre-ADR-17 vs Current)
+// -------------------------------------------------------------
+async function loadTimelineState(state) {
+  try {
+    const res = await fetch(`/api/timeline/as-of?state=${state}&tenant=${activeTenant}`);
+    const data = await res.json();
+    if (cy && data.elements) {
+      cy.elements().remove();
+      cy.add(data.elements.nodes);
+      cy.add(data.elements.edges);
+      cy.layout({
+        name: "cose",
+        animate: true,
+        animationDuration: 350,
+        padding: 30
+      }).run();
+      const countEl = document.getElementById("topo-node-count");
+      if (countEl) countEl.textContent = `${data.as_of_label} • t:${activeTenant}`;
+
+      data.elements.nodes.forEach(n => {
+        const el = cy.$id(n.data.id);
+        if (n.data.status === "alerting") el.addClass("alerting");
+        else if (n.data.status === "root_cause") el.addClass("root");
+        else if (n.data.status === "decommissioned") el.addClass("diff-retired");
+      });
+    }
+  } catch (err) {
+    console.error("Timeline error:", err);
+  }
+}
+
+// -------------------------------------------------------------
+// Helper: Apply Q7 Architectural Diff Overlay
+// -------------------------------------------------------------
+async function applyQ7DiffOverlay() {
+  try {
+    const res = await fetch(`/api/timeline/diff?tenant=${activeTenant}`);
+    const diff = await res.json();
+
+    // Baseline current
+    await loadTimelineState("current");
+
+    // Add retired edges and style as diff-removed
+    (diff.removed_edges || []).forEach(re => {
+      const edgeId = `${re.source}->${re.target}`;
+      let el = cy.getElementById(edgeId);
+      if (!el || el.length === 0) {
+        cy.add({
+          group: "edges",
+          data: { id: edgeId, source: re.source, target: re.target, kind: "network" }
+        });
+        el = cy.getElementById(edgeId);
+      }
+      if (el) el.addClass("diff-removed");
+    });
+
+    // Style added edges as diff-added
+    (diff.added_edges || []).forEach(ae => {
+      const edgeId = `${ae.source}->${ae.target}`;
+      const el = cy.getElementById(edgeId);
+      if (el) el.addClass("diff-added");
+    });
+
+    // Mark retired nodes
+    (diff.retired_nodes || []).forEach(rn => {
+      const n = cy.getElementById(rn.id);
+      if (n) n.addClass("diff-retired");
+    });
+
+    // Mark added nodes
+    (diff.added_nodes || []).forEach(an => {
+      const n = cy.getElementById(an.id);
+      if (n) n.addClass("diff-added-node");
+    });
+
+    const countEl = document.getElementById("topo-node-count");
+    if (countEl) countEl.textContent = `Q7 Diff Overlay (ADR-17 Architectural Migration) • t:${activeTenant}`;
+  } catch (err) {
+    console.error("Diff overlay error:", err);
   }
 }

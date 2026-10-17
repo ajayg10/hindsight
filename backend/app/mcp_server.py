@@ -440,6 +440,7 @@ class HindsightToolRegistry:
         ans_id = self._record_answer(target_g, "who_knows", "q04_who_knows.cypher", rule.rule_id, summary, evidence, persist=persist_answer)
 
         return {
+            "tool": "who_knows",
             "answer_id": ans_id,
             "service_id": service_id,
             "primary_expert": primary["person"] if primary else None,
@@ -480,6 +481,7 @@ class HindsightToolRegistry:
         rule = get_rule("RULE-06-OWNERSHIP-ROUTING")
         ans_id = self._record_answer(target_g, "who_owns", "internal_ownership", rule.rule_id, f"Owning team: {team_info.get('team_name', 'None')}", evidence, persist=persist_answer)
         return {
+            "tool": "who_owns",
             "answer_id": ans_id,
             "service_id": service_id,
             "owner": team_info,
@@ -529,6 +531,7 @@ class HindsightToolRegistry:
         rule = get_rule("RULE-08-DECISION-PROVENANCE")
         ans_id = self._record_answer(target_g, "trace_decision", "q05_trace_decision.cypher", rule.rule_id, summary, evidence, persist=persist_answer)
         return {
+            "tool": "trace_decision",
             "answer_id": ans_id,
             "service_id": service_id,
             "decision_id": decision_id,
@@ -572,6 +575,7 @@ class HindsightToolRegistry:
         ans_id = self._record_answer(target_g, "staleness_audit", "staleness_audit.cypher", rule.rule_id, summary, evidence, persist=persist_answer)
 
         return {
+            "tool": "staleness_audit",
             "answer_id": ans_id,
             "stale_docs": stale_docs,
             "count": len(stale_docs),
