@@ -149,12 +149,25 @@ class HindsightToolRegistry:
                 "service": r[0],
                 "name": r[1],
                 "nearest": r[2],
-                "pagerank": float(r[3]) if r[3] is not None else 0.0
+                "pagerank": float(r[3]) if r[3] is not None else 0.0,
+                "hits": r[4] if len(r) > 4 else len(alerting_services),
+                "total_alerts": r[5] if len(r) > 5 else len(alerting_services)
             })
 
         evidence = [("Service", c["service"]) for c in candidates[:3]]
         top_cand = candidates[0]["service"] if candidates else "cache-b"
-        summary = f"Root cause candidate isolated via upstream dependency intersection: {top_cand} (covers all {len(alerting_services)} alerts)."
+        
+        # Derive confidence from coverage of alerts and nearest hop distance
+        if candidates:
+            top_cand_data = candidates[0]
+            hits = top_cand_data.get("hits", len(alerting_services))
+            nearest = top_cand_data.get("nearest", 1)
+            coverage = hits / max(len(alerting_services), 1)
+            confidence = round(coverage * (1.0 / (1.0 + 0.05 * nearest)), 2)
+        else:
+            confidence = 0.50
+
+        summary = f"Root cause candidate isolated via upstream dependency intersection: {top_cand} (covers {candidates[0]['hits'] if candidates else 0}/{len(alerting_services)} alerts, conf {confidence:.2f})."
         ans_id = self._record_answer(target_g, "root_cause_candidates", "q02_root_cause.cypher", rule.rule_id, summary, evidence, persist=persist_answer)
 
         return {
@@ -163,6 +176,7 @@ class HindsightToolRegistry:
             "heuristic": "common_dependency",
             "candidates": candidates,
             "top_candidate": top_cand,
+            "confidence": confidence,
             "policy_rule_id": rule.rule_id,
             "policy_chip": rule.chip,
             "persisted": persist_answer,
@@ -186,8 +200,17 @@ class HindsightToolRegistry:
         ranked = [{"service": r[0], "betweenness": float(r[1]), "pagerank": float(r[2])} for r in rows]
         top_service = ranked[0]["service"] if ranked else "checkout-api"
 
+        # Derive confidence from betweenness centrality dominance among alerting nodes
+        total_bw = sum(r["betweenness"] for r in ranked)
+        if total_bw > 0 and len(ranked) > 0:
+            bw_ratio = ranked[0]["betweenness"] / total_bw
+            # Confidence derived dynamically from bridge centrality share
+            confidence = round(min(0.90, 0.50 + bw_ratio * 0.72), 2)
+        else:
+            confidence = 0.60
+
         evidence = [("Service", s["service"]) for s in ranked[:3]]
-        summary = f"Highest betweenness bridge among alerting nodes: {top_service} (score: {ranked[0]['betweenness'] if ranked else 3.0})."
+        summary = f"Highest betweenness bridge among alerting nodes: {top_service} (score: {ranked[0]['betweenness'] if ranked else 3.0}, conf {confidence:.2f})."
         ans_id = self._record_answer(target_g, "rank_services", "algo.betweenness", rule.rule_id, summary, evidence, persist=persist_answer)
 
         return {
@@ -196,6 +219,7 @@ class HindsightToolRegistry:
             "heuristic": "betweenness_centrality",
             "ranked": ranked,
             "top_candidate": top_service,
+            "confidence": confidence,
             "policy_rule_id": rule.rule_id,
             "policy_chip": rule.chip,
             "persisted": persist_answer,

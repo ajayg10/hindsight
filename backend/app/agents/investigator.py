@@ -26,11 +26,11 @@ class InvestigatorAgent:
         if self.heuristic == "common_dependency":
             analysis = await asyncio.to_thread(self.tools.root_cause_candidates, incident_id)
             root_service = analysis["top_candidate"]
-            confidence = 0.95
+            confidence = analysis.get("confidence", 0.70)
         else:
             analysis = await asyncio.to_thread(self.tools.rank_services, incident_id, method="betweenness")
             root_service = analysis["top_candidate"]
-            confidence = 0.85
+            confidence = analysis.get("confidence", 0.70)
 
         # 3. Assert hypothesis into graph state
         hyp_res = await asyncio.to_thread(
