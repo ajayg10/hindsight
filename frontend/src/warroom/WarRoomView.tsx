@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
+import Link from "next/link";
 import { initWarRoom } from "./warroom-logic";
 
 export default function WarRoomView() {
@@ -17,7 +18,7 @@ export default function WarRoomView() {
   {/* Top Navigation Bar */}
   <header className="topbar">
     <div className="brand">
-        <a
+        <Link
           href="/"
           className="back-link"
           title="Return to Hindsight Landing Page"
@@ -35,7 +36,7 @@ export default function WarRoomView() {
           }}
         >
           &larr; Hindsight
-        </a>
+        </Link>
       <div className="logo-mark">
         <span className="pulse-dot"></span>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -391,7 +392,7 @@ export default function WarRoomView() {
             <span id="why-cypher-name">query.cypher</span>
             <button id="why-copy-cypher" className="btn-xs">Copy</button>
           </div>
-          <pre><code id="why-cypher-code" className="language-cypher">// Awaiting query...</code></pre>
+          <pre><code id="why-cypher-code" className="language-cypher">{"// Awaiting query..."}</code></pre>
         </div>
       </div>
 
