@@ -33,6 +33,7 @@ services:
         condition: service_healthy
     command: [python, scripts/phase0.py]
   web:
+    restart: always
     build:
       context: .
       dockerfile: backend/Dockerfile.spikes
