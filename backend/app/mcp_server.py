@@ -154,6 +154,7 @@ class HindsightToolRegistry:
                 "total_alerts": r[5] if len(r) > 5 else len(alerting_services)
             })
 
+
         evidence = [("Service", c["service"]) for c in candidates[:3]]
         top_cand = candidates[0]["service"] if candidates else "cache-b"
         

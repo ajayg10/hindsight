@@ -145,41 +145,147 @@ def generate_full_seed(db, graph_name="t:parcelo"):
         }]->(b)
         """, {"a": a, "b": b, "valid_from": month_ago, "fact_id": fact_id})
 
-    # 4. Generate Filler Docs, Tickets, Messages
-    print("Step 4: Generating template-based docs, tickets, messages...")
-    docs_data = []
-    for s in FILLER_SERVICES[:15]:
-        docs_data.append({
-            "id": f"doc-{s['id']}",
-            "title": f"{s['name']} - Architecture & Operational Guide",
-            "kind": "architecture",
-            "last_verified_at": now - (15 * 24 * 3600 * 1000),
-            "svc": s["id"]
-        })
+    # 4. Generate ~300 Docs, ~500 Threads, ~2,000 Messages, ~120 Past Incidents
+    print("Step 4: Enriching graph with template-based docs, threads, messages, and episodes (~3,000 nodes)...")
+    
+    # 4a. 15 Template Engineers (preserves Priya and Marco evidence counts on cache-b)
+    engineers = [
+        {"id": f"eng-{i:02d}", "name": f"Engineer {i}", "role": "dev", "status": "active"}
+        for i in range(1, 16)
+    ]
     g.query("""
-    UNWIND $docs AS d
-    MATCH (s:Service {id:d.svc})
-    CREATE (doc:Doc {
-        id: d.id,
-        title: d.title,
-        kind: d.kind,
-        last_verified_at: d.last_verified_at
-    })-[:DESCRIBES]->(s)
-    """, {"docs": docs_data})
+    UNWIND $engs AS e
+    CREATE (:Person {id: e.id, name: e.name, role: e.role, status: e.status})
+    """, {"engs": engineers})
+
+    # 4b. 300 Docs: all verified recently (within last 5 days), strictly > adr17_time (preserves exactly 3 stale docs)
+    enrich_svcs = [s["id"] for s in FILLER_SERVICES] + ["inventory", "shipping", "order-processing", "recommendation"]
+    docs_data = []
+    doc_kinds = ["architecture", "runbook", "spec", "slo", "troubleshooting"]
+    for i in range(1, 301):
+        svc_target = enrich_svcs[i % len(enrich_svcs)]
+        author_id = engineers[i % len(engineers)]["id"]
+        verified_at = now - (rng.randint(1, 5) * 86400 * 1000)
+        docs_data.append({
+            "id": f"doc-tmpl-{i:03d}",
+            "title": f"{svc_target.capitalize()} - {doc_kinds[i % len(doc_kinds)].capitalize()} Document v{1 + (i % 3)}",
+            "kind": doc_kinds[i % len(doc_kinds)],
+            "last_verified_at": verified_at,
+            "svc": svc_target,
+            "author": author_id
+        })
+
+    for chunk in [docs_data[i:i+100] for i in range(0, len(docs_data), 100)]:
+        g.query("""
+        UNWIND $docs AS d
+        MATCH (s:Service {id:d.svc}), (p:Person {id:d.author})
+        CREATE (doc:Doc {
+            id: d.id,
+            title: d.title,
+            kind: d.kind,
+            last_verified_at: d.last_verified_at
+        })-[:DESCRIBES]->(s)
+        CREATE (p)-[:AUTHORED]->(doc)
+        """, {"docs": chunk})
+
+    # 4c. 500 Threads
+    threads_data = []
+    for i in range(1, 501):
+        threads_data.append({
+            "id": f"th-tmpl-{i:03d}",
+            "title": f"Production Alert & Optimization Thread #{1000 + i}"
+        })
+    for chunk in [threads_data[i:i+100] for i in range(0, len(threads_data), 100)]:
+        g.query("""
+        UNWIND $threads AS th
+        CREATE (:Thread {id: th.id, title: th.title})
+        """, {"threads": chunk})
+
+    # 4d. 2,000 Messages
+    msgs_data = []
+    sample_texts = [
+        "Investigating latency spike on upstream gateway connection.",
+        "Applied connection pool limit increase to prevent queue buildup.",
+        "Rolling restart of worker replicas completed smoothly.",
+        "Verified metrics dashboard; p99 latency returned to baseline.",
+        "Documenting RCA and updating circuit breaker thresholds."
+    ]
+    for i in range(1, 2001):
+        th_id = f"th-tmpl-{(i % 500) + 1:03d}"
+        author_id = engineers[i % len(engineers)]["id"]
+        svc_target = enrich_svcs[i % len(enrich_svcs)]
+        msg_time = now - (rng.randint(2, 28) * 86400 * 1000)
+        msgs_data.append({
+            "id": f"msg-tmpl-{i:04d}",
+            "text": sample_texts[i % len(sample_texts)],
+            "at": msg_time,
+            "th": th_id,
+            "author": author_id,
+            "svc": svc_target
+        })
+
+    for chunk in [msgs_data[i:i+200] for i in range(0, len(msgs_data), 200)]:
+        g.query("""
+        UNWIND $msgs AS m
+        MATCH (th:Thread {id:m.th}), (p:Person {id:m.author}), (s:Service {id:m.svc})
+        CREATE (msg:Message {id:m.id, text:m.text, at:m.at})
+        CREATE (msg)-[:IN]->(th)
+        CREATE (p)-[:AUTHORED]->(msg)
+        CREATE (msg)-[:MENTIONS]->(s)
+        """, {"msgs": chunk})
+
+    # 4e. 120 Past Incidents / Episodes
+    episodes_data = []
+    for i in range(1, 121):
+        svc_target = enrich_svcs[i % len(enrich_svcs)]
+        resolver_id = engineers[i % len(engineers)]["id"]
+        t_start = now - (rng.randint(5, 45) * 86400 * 1000)
+        t_end = t_start + rng.randint(900000, 3600000)
+        episodes_data.append({
+            "id": f"INC-PAST-{i:03d}",
+            "kind": "incident",
+            "outcome": "success",
+            "t_start": t_start,
+            "t_end": t_end,
+            "svc": svc_target,
+            "resolver": resolver_id
+        })
+
+    for chunk in [episodes_data[i:i+50] for i in range(0, len(episodes_data), 50)]:
+        g.query("""
+        UNWIND $eps AS ep
+        MATCH (s:Service {id:ep.svc}), (p:Person {id:ep.resolver})
+        CREATE (e:Episode {
+            id: ep.id,
+            kind: ep.kind,
+            outcome: ep.outcome,
+            t_start: ep.t_start,
+            t_end: ep.t_end
+        })-[:INVOLVED]->(s)
+        CREATE (p)-[:RESOLVED]->(e)
+        """, {"eps": chunk})
 
     # 5. Recompute Algorithms across all 58 services
-    print("Step 5: Refreshing PageRank and Betweenness across 58 services...")
+    print("Step 5: Refreshing PageRank, Betweenness, and Librarian Expertise...")
     g.query("CALL algo.pageRank('Service', 'DEPENDS_ON') YIELD node, score SET node.pagerank = score")
-    g.query("CALL algo.betweenness({nodeLabels:['Service'], relationshipTypes:['DEPENDS_ON'], samplingSize: 58, samplingSeed: 42}) YIELD node, score SET node.betweenness = score")
+    try:
+        from app.librarian import recompute_expertise
+    except ImportError:
+        from backend.app.librarian import recompute_expertise
+    recompute_expertise(db, graph_name=graph_name, now=now)
 
     total_services = g.query("MATCH (s:Service) RETURN count(s)").result_set[0][0]
     total_edges = g.query("MATCH ()-[r:DEPENDS_ON]->() RETURN count(r)").result_set[0][0]
     total_docs = g.query("MATCH (d:Doc) RETURN count(d)").result_set[0][0]
+    total_nodes = g.query("MATCH (n) RETURN count(n)").result_set[0][0]
+    total_all_edges = g.query("MATCH ()-[r]->() RETURN count(r)").result_set[0][0]
 
     return {
         "graph_name": graph_name,
+        "total_nodes": total_nodes,
+        "total_edges": total_all_edges,
         "total_services": total_services,
-        "total_live_edges": total_edges,
+        "total_live_depends_on": total_edges,
         "total_docs": total_docs,
         "clock_now": now
     }
