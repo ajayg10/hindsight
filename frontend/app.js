@@ -10,8 +10,39 @@ let cy = null;
 let eventCount = 0;
 let evtSource = null;
 let activeTenant = "parcelo";
+let currentSessionId = sessionStorage.getItem("hindsight_session_id") || null;
+let isGraphOn = true;
 
-document.addEventListener("DOMContentLoaded", () => {
+async function ensureSession(tenant = "parcelo") {
+  if (!currentSessionId) {
+    try {
+      const res = await fetch(`/api/session?tenant=${tenant}`, { method: "POST" });
+      const data = await res.json();
+      currentSessionId = data.session_id;
+      sessionStorage.setItem("hindsight_session_id", currentSessionId);
+    } catch (e) {
+      currentSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
+    }
+  }
+  const chip = document.getElementById("session-chip");
+  if (chip) chip.textContent = `${currentSessionId.slice(0, 10)}... (fork)`;
+  return currentSessionId;
+}
+
+function sessionFetch(url, options = {}) {
+  options.headers = options.headers || {};
+  if (currentSessionId) {
+    if (options.headers instanceof Headers) {
+      options.headers.set("X-Session-ID", currentSessionId);
+    } else {
+      options.headers["X-Session-ID"] = currentSessionId;
+    }
+  }
+  return fetch(url, options);
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await ensureSession(activeTenant);
   initCytoscape(activeTenant);
   initEventStream();
   initControls();
@@ -21,7 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function updateLiveStats(tenant = "parcelo") {
   try {
-    const res = await fetch(`/api/stats?tenant=${tenant}`);
+    const res = await sessionFetch(`/api/stats?tenant=${tenant}`);
     if (res.ok) {
       const data = await res.json();
       const latEl = document.getElementById("latency-chip");
@@ -39,7 +70,7 @@ async function updateLiveStats(tenant = "parcelo") {
 // -------------------------------------------------------------
 async function initCytoscape(tenant = "parcelo") {
   try {
-    const res = await fetch(`/api/graph?tenant=${tenant}`);
+    const res = await sessionFetch(`/api/graph?tenant=${tenant}`);
     const data = await res.json();
     const elements = data.elements;
 
@@ -503,6 +534,26 @@ function initControls() {
   const btnReset = document.getElementById("btn-reset-graph");
   const btnClear = document.getElementById("btn-clear-term");
   const pacingMode = document.getElementById("pacing-mode");
+  const btnGraphToggle = document.getElementById("btn-graph-toggle");
+  const graphToggleText = document.getElementById("graph-toggle-text");
+  const baselineBanner = document.getElementById("baseline-banner");
+
+  if (btnGraphToggle) {
+    btnGraphToggle.addEventListener("click", () => {
+      isGraphOn = !isGraphOn;
+      if (isGraphOn) {
+        btnGraphToggle.classList.add("on");
+        btnGraphToggle.classList.remove("off");
+        if (graphToggleText) graphToggleText.textContent = "GRAPH ON";
+        if (baselineBanner) baselineBanner.classList.add("hidden");
+      } else {
+        btnGraphToggle.classList.add("off");
+        btnGraphToggle.classList.remove("on");
+        if (graphToggleText) graphToggleText.textContent = "GRAPH OFF";
+        if (baselineBanner) baselineBanner.classList.remove("hidden");
+      }
+    });
+  }
 
   btnRun.addEventListener("click", async () => {
     btnRun.disabled = true;
@@ -510,12 +561,33 @@ function initControls() {
     btnRun.classList.add("active");
 
     try {
-      const mode = pacingMode.value;
-      await fetch("/api/storm/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: mode, reset: true })
-      });
+      if (isGraphOn) {
+        const mode = pacingMode.value;
+        await sessionFetch("/api/storm/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: mode, reset: true, tenant: activeTenant, session_id: currentSessionId })
+        });
+      } else {
+        // Run Flat TF-IDF Keyword Baseline
+        const res = await sessionFetch("/api/baseline/storm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" }
+        });
+        const data = await res.json();
+        const term = document.getElementById("terminal-feed");
+        if (term) {
+          const entry = document.createElement("div");
+          entry.className = "feed-entry baseline-entry";
+          entry.innerHTML = `
+            <span class="type warning">BASELINE (GRAPH OFF)</span>
+            <span class="detail" style="color:#f59e0b;">
+              TF-IDF Lexical Miss: Picked <strong>${data.baseline_root_cause}</strong> (frequency overlap). Recommends <strong>${data.baseline_procedure}</strong> and pages <strong>${data.baseline_oncall}</strong>.
+            </span>
+          `;
+          term.prepend(entry);
+        }
+      }
     } catch (err) {
       console.error("Failed to run storm:", err);
     } finally {
@@ -529,7 +601,7 @@ function initControls() {
 
   btnApprove.addEventListener("click", async () => {
     try {
-      await fetch("/api/storm/approve", { method: "POST" });
+      await sessionFetch("/api/storm/approve", { method: "POST" });
       document.getElementById("gate-action-box").classList.add("hidden");
     } catch (err) {
       console.error("Failed to approve action:", err);
@@ -538,12 +610,15 @@ function initControls() {
 
   btnReset.addEventListener("click", async () => {
     try {
-      await fetch("/api/storm/run", {
+      const res = await sessionFetch("/api/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "fast", reset: true })
+        body: JSON.stringify({ tenant: activeTenant, session_id: currentSessionId })
       });
-      location.reload();
+      const data = await res.json();
+      console.log("Visitor fork reset:", data);
+      await initCytoscape(activeTenant);
+      await updateLiveStats(activeTenant);
     } catch (err) {
       console.error("Failed to reset graph:", err);
     }

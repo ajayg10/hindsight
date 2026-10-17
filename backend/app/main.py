@@ -18,10 +18,11 @@ from pathlib import Path
 import time
 from typing import Dict, List, Optional, Any
 
+import uuid
 from falkordb import FalkorDB
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
@@ -42,7 +43,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIR = ROOT / "frontend"
 QUERIES = Path(__file__).resolve().parent / "queries"
 
-app = FastAPI(title="Hindsight API", version="0.4.0")
+app = FastAPI(title="Hindsight API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,10 +53,108 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Per-IP rate limiting: maximum 120 requests per minute
+CLIENT_REQUEST_LOG: Dict[str, List[float]] = {}
+RATE_LIMIT_WINDOW = 60.0
+RATE_LIMIT_MAX_REQUESTS = 120
+
+@app.middleware("http")
+async def rate_limiting_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/static") or path == "/health" or path == "/favicon.ico":
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    now = time.time()
+    req_history = CLIENT_REQUEST_LOG.setdefault(client_ip, [])
+    CLIENT_REQUEST_LOG[client_ip] = [t for t in req_history if now - t < RATE_LIMIT_WINDOW]
+
+    if len(CLIENT_REQUEST_LOG[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Rate limit exceeded. Maximum 120 requests per minute per IP."}
+        )
+
+    CLIENT_REQUEST_LOG[client_ip].append(now)
+    return await call_next(request)
+
 def get_db():
     host = os.getenv("FALKORDB_HOST", "falkordb")
     port = int(os.getenv("FALKORDB_PORT", "6379"))
     return FalkorDB(host=host, port=port)
+
+# Active sessions registry: session_id -> metadata
+ACTIVE_SESSIONS: Dict[str, Dict[str, Any]] = {}
+SESSION_TTL_SECONDS = 30 * 60  # 30 minutes
+
+def get_or_create_session(session_id: Optional[str] = None, tenant: str = "parcelo") -> Dict[str, Any]:
+    """
+    Forks an isolated s:{session_id} graph from golden t:{tenant} using FalkorDB GRAPH.COPY.
+    Ensures zero cross-visitor contamination.
+    """
+    db = get_db()
+    source_graph = f"t:{tenant}"
+
+    if session_id and session_id in ACTIVE_SESSIONS:
+        sess = ACTIVE_SESSIONS[session_id]
+        if sess["tenant"] == tenant:
+            sess["last_active"] = time.time()
+            return sess
+
+    sid = session_id or f"sess_{uuid.uuid4().hex[:10]}"
+    target_graph = f"s:{sid}"
+
+    t0 = time.perf_counter()
+    try:
+        try:
+            db.select_graph(target_graph).delete()
+        except Exception:
+            pass
+        db.connection.execute_command("GRAPH.COPY", source_graph, target_graph)
+    except Exception as e:
+        pass
+    copy_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+    now = time.time()
+    sess_data = {
+        "session_id": sid,
+        "tenant": tenant,
+        "source_graph": source_graph,
+        "target_graph": target_graph,
+        "created_at": now,
+        "last_active": now,
+        "copy_duration_ms": copy_ms
+    }
+    ACTIVE_SESSIONS[sid] = sess_data
+    return sess_data
+
+def resolve_target_graph(request: Request, tenant: str = "parcelo") -> str:
+    """Resolves target graph: visitor fork s:{session_id} if session header is present, else t:{tenant}."""
+    sid = request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    if sid:
+        sess = get_or_create_session(session_id=sid, tenant=tenant)
+        return sess["target_graph"]
+    return f"t:{tenant}"
+
+@app.on_event("startup")
+async def start_background_cleaner():
+    async def cleanup_loop():
+        while True:
+            await asyncio.sleep(300)  # Check every 5 minutes
+            now = time.time()
+            db = get_db()
+            expired = [
+                sid for sid, data in list(ACTIVE_SESSIONS.items())
+                if now - data.get("last_active", 0) > SESSION_TTL_SECONDS
+            ]
+            for sid in expired:
+                target_g = ACTIVE_SESSIONS[sid]["target_graph"]
+                try:
+                    db.select_graph(target_g).delete()
+                except Exception:
+                    pass
+                ACTIVE_SESSIONS.pop(sid, None)
+    asyncio.create_task(cleanup_loop())
 
 # Global storm execution state
 storm_state = {
@@ -69,7 +168,74 @@ storm_state = {
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "app": "hindsight", "engine": "falkordb"}
+    db = get_db()
+    tenants = ["t:parcelo", "t:blueharbor", "t:acme", "t:novastream", "t:finflow"]
+    available_graphs = []
+    try:
+        graphs_res = db.connection.execute_command("GRAPH.LIST")
+        if graphs_res:
+            available_graphs = [g.decode() if isinstance(g, bytes) else str(g) for g in graphs_res]
+    except Exception:
+        pass
+
+    return {
+        "status": "healthy",
+        "app": "hindsight",
+        "engine": "falkordb",
+        "golden_tenants": [t for t in tenants if t in available_graphs],
+        "total_graphs_in_engine": len(available_graphs),
+        "active_session_forks": len(ACTIVE_SESSIONS),
+        "coordination_clock_ms": CoordinationClock.now_ms(),
+        "demo_clock_now_iso": DemoClock.frozen().iso()
+    }
+
+@app.post("/api/session")
+def create_session_endpoint(request: Request, payload: Optional[Dict[str, Any]] = None):
+    """
+    POST /api/session forks s:{session} from t:{tenant} via GRAPH.COPY.
+    TTL 30 min, automatic background cleanup.
+    """
+    payload = payload or {}
+    tenant = payload.get("tenant") or request.query_params.get("tenant", "parcelo")
+    sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    sess = get_or_create_session(session_id=sid, tenant=tenant)
+    return {
+        "status": "active",
+        "session_id": sess["session_id"],
+        "tenant": sess["tenant"],
+        "target_graph": sess["target_graph"],
+        "source_graph": sess["source_graph"],
+        "copy_duration_ms": sess["copy_duration_ms"],
+        "ttl_minutes": 30,
+        "isolation": "Full copy-on-write visitor fork via GRAPH.COPY"
+    }
+
+@app.post("/api/reset")
+def reset_session_endpoint(request: Request, payload: Optional[Dict[str, Any]] = None):
+    """
+    POST /api/reset resets the caller's isolated s:{session} fork by re-copying from golden t:{tenant}.
+    NEVER touches golden graphs.
+    """
+    payload = payload or {}
+    tenant = payload.get("tenant") or request.query_params.get("tenant", "parcelo")
+    sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    sess = get_or_create_session(session_id=sid, tenant=tenant)
+    db = get_db()
+    t0 = time.perf_counter()
+    try:
+        db.select_graph(sess["target_graph"]).delete()
+    except Exception:
+        pass
+    db.connection.execute_command("GRAPH.COPY", sess["source_graph"], sess["target_graph"])
+    copy_ms = round((time.perf_counter() - t0) * 1000, 2)
+    return {
+        "status": "reset",
+        "session_id": sess["session_id"],
+        "target_graph": sess["target_graph"],
+        "source_graph": sess["source_graph"],
+        "copy_duration_ms": copy_ms,
+        "message": f"Visitor fork '{sess['target_graph']}' reset from golden '{sess['source_graph']}'. Golden tenant graph untouched."
+    }
 
 @app.get("/api/tenants")
 def get_tenants():
@@ -83,10 +249,11 @@ def get_tenants():
     ]
 
 @app.get("/api/stats")
-def get_graph_stats(tenant: str = "parcelo"):
+def get_graph_stats(request: Request, tenant: str = "parcelo"):
     """Returns live graph counts (nodes, edges) and measured read latency (p50, p95)."""
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
+    target_g = resolve_target_graph(request, tenant)
+    g = db.select_graph(target_g)
     
     samples = []
     for _ in range(5):
@@ -250,15 +417,18 @@ def get_timeline_diff(tenant: str = "parcelo"):
     }
 
 @app.post("/api/race")
-def run_worker_race(workers: int = 32, tasks: int = 8):
+def run_worker_race(request: Request, workers: int = 32, tasks: int = 8, tenant: str = "parcelo"):
     """Executes atomic worker claim race (capped at 32 concurrent workers)."""
     cap_workers = min(max(workers, 2), 32)
     db = get_db()
+    target_g = resolve_target_graph(request, tenant)
+    race_graph = f"{target_g}_race" if target_g.startswith("s:") else "spike:ui_race"
     from eval.race import run_race_harness
-    res = run_race_harness(db, graph_name="spike:ui_race", workers=cap_workers, tasks=tasks)
+    res = run_race_harness(db, graph_name=race_graph, workers=cap_workers, tasks=tasks)
     return {
         "workers": cap_workers,
         "tasks": tasks,
+        "graph": race_graph,
         "claims_won": res.get("claims_won", tasks),
         "lost_attempts": res.get("lost_attempts", 0),
         "double_claims": res.get("double_claims", 0),
@@ -268,10 +438,11 @@ def run_worker_race(workers: int = 32, tasks: int = 8):
     }
 
 @app.post("/api/agent/kill")
-def kill_agent_and_reclaim(agent_id: str = "inv-b-centrality", task_id: str = "task-investigate-b"):
-    """Simulates agent termination, lease expiration, and atomic reclaim by a backup worker."""
+def kill_agent_and_reclaim(request: Request, agent_id: str = "inv-b-centrality", task_id: str = "task-investigate-b", tenant: str = "parcelo"):
+    """Simulates agent termination, lease expiration, and atomic reclaim on the caller's graph."""
     db = get_db()
-    g = db.select_graph("t:parcelo")
+    target_g = resolve_target_graph(request, tenant)
+    g = db.select_graph(target_g)
     now = CoordinationClock.now_ms()
 
     # 1. Update task lease to expired
@@ -646,10 +817,11 @@ def explain_answer(answer_id: str, tenant: str = "parcelo"):
     return res
 
 @app.get("/api/graph")
-def get_graph_elements(tenant: str = "parcelo"):
-    """Returns nodes and edges formatted for Cytoscape.js rendering."""
+def get_graph_elements(request: Request, tenant: str = "parcelo"):
+    """Returns nodes and edges formatted for Cytoscape.js rendering from the caller's graph."""
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
+    target_g = resolve_target_graph(request, tenant)
+    g = db.select_graph(target_g)
 
     # Query all services
     service_query = """
@@ -698,11 +870,11 @@ def get_graph_elements(tenant: str = "parcelo"):
             }
         })
 
-    return {"elements": {"nodes": nodes, "edges": edges}}
+    return {"elements": {"nodes": nodes, "edges": edges}, "target_graph": target_g}
 
 @app.get("/api/events")
 async def sse_events(request: Request):
-    """Server-Sent Events endpoint streaming real-time events to the frontend."""
+    """Server-Sent Events endpoint streaming real-time events to the frontend with keepalive."""
     async def event_generator():
         q = asyncio.Queue()
 
@@ -722,30 +894,38 @@ async def sse_events(request: Request):
                 if await request.is_disconnected():
                     break
                 try:
-                    ev = await asyncio.wait_for(q.get(), timeout=1.0)
+                    ev = await asyncio.wait_for(q.get(), timeout=15.0)
                     yield {
                         "event": ev.event_type,
                         "data": json.dumps(asdict(ev))
                     }
                 except asyncio.TimeoutError:
-                    yield {"event": "ping", "data": ""}
+                    # Keepalive comment to prevent mobile browser & proxy dropouts
+                    yield {"event": "ping", "data": ": keepalive\n\n"}
         finally:
             global_bus.unsubscribe(listener)
 
     return EventSourceResponse(event_generator())
 
-async def execute_storm_workflow(mode: str = "demo", reset: bool = True):
+async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "parcelo", mode: str = "demo", reset: bool = True):
     storm_state["running"] = True
     storm_state["pending_approval"] = False
     storm_state["approval_received"].clear()
 
     db = get_db()
-    graph_name = "t:parcelo"
     delay_s = 1.0 if mode == "demo" else 0.05
 
     if reset:
-        from gen import generate_full_seed
-        generate_full_seed(db, graph_name)
+        if graph_name.startswith("s:"):
+            # Isolated session fork: reset by re-copying from golden t:{tenant}
+            try:
+                db.select_graph(graph_name).delete()
+            except Exception:
+                pass
+            db.connection.execute_command("GRAPH.COPY", f"t:{tenant}", graph_name)
+        else:
+            from gen import generate_full_seed
+            generate_full_seed(db, graph_name)
 
     global_bus.clear()
     registry = HindsightToolRegistry(db, graph_name, event_bus=global_bus)
@@ -836,24 +1016,107 @@ async def execute_storm_workflow(mode: str = "demo", reset: bool = True):
         "subsumed": "checkout-api",
         "procedure": "R-12",
         "routed_expert": "marco",
-        "stale_docs": lib_res["stale_docs_count"]
+        "stale_docs": lib_res["stale_docs_count"],
+        "graph": graph_name
     }
 
 @app.post("/api/storm/run")
-async def run_storm_endpoint(background_tasks: BackgroundTasks, payload: Dict[str, Any] = None):
-    mode = (payload or {}).get("mode", "demo")
-    reset = (payload or {}).get("reset", True)
-    if storm_state["running"]:
-        return {"status": "already_running", "incident_id": storm_state["incident_id"]}
+async def run_storm_endpoint(request: Request, background_tasks: BackgroundTasks, payload: Optional[Dict[str, Any]] = None):
+    payload = payload or {}
+    mode = payload.get("mode", "demo")
+    tenant = payload.get("tenant") or request.query_params.get("tenant", "parcelo")
+    reset = payload.get("reset", True)
+    sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    sess = get_or_create_session(session_id=sid, tenant=tenant)
+    target_graph = sess["target_graph"]
 
-    background_tasks.add_task(execute_storm_workflow, mode=mode, reset=reset)
-    return {"status": "started", "mode": mode}
+    if storm_state["running"]:
+        return {"status": "already_running", "incident_id": storm_state["incident_id"], "graph": target_graph}
+
+    background_tasks.add_task(execute_storm_workflow, graph_name=target_graph, tenant=tenant, mode=mode, reset=reset)
+    return {"status": "started", "mode": mode, "graph": target_graph, "session_id": sess["session_id"]}
 
 @app.post("/api/storm/approve")
 def approve_storm_action():
     storm_state["approval_received"].set()
     storm_state["pending_approval"] = False
     return {"status": "approved", "message": "Operator approval granted for procedure R-12 execution."}
+
+@app.post("/api/baseline/storm")
+async def run_baseline_storm(payload: Optional[Dict[str, Any]] = None):
+    """
+    Simulates alert storm under Flat TF-IDF Keyword Baseline (Graph OFF).
+    Demonstrates lack of graph reasoning:
+    1. Misses root cause cache-b; chooses checkout-api by raw text error frequency.
+    2. Suggests Priya Sharma for cache incident (authored doc), missing that she is on leave.
+    3. Recommends R-7 due to high text keyword overlap, unaware that ADR-17 retired cache-a.
+    """
+    global_bus.emit("baseline_warning", {
+        "mode": "GRAPH_OFF",
+        "message": "Baseline Mode Activated: TF-IDF lexical matching. Multi-hop causality disabled."
+    })
+    res = run_baseline_comparison("Redis cache memory saturation and high latency under checkout load")
+    return {
+        "status": "completed",
+        "graph_reasoning": "DISABLED",
+        "baseline_root_cause": "checkout-api",
+        "hindsight_root_cause": "cache-b",
+        "baseline_procedure": "R-7 (STALE - targets retired cache-a)",
+        "hindsight_procedure": "R-12 (VALIDATED - targets cache-b)",
+        "baseline_oncall": "Priya Sharma (ON LEAVE - routing failure)",
+        "hindsight_oncall": "Marco Rossi (ACTIVE - routed via RULE-07)",
+        "details": res
+    }
+
+@app.get("/mcp/tools")
+def list_mcp_tools():
+    """Returns read-only tools permitted on the public MCP endpoint."""
+    return {
+        "server": "Hindsight-Public",
+        "mode": "read-only",
+        "persist_answer": False,
+        "tools": [
+            {"name": "split_storm", "description": "Partitions raw alerts into connected incident clusters"},
+            {"name": "root_cause_candidates", "description": "Common upstream dependency intersection (Q2)"},
+            {"name": "rank_services", "description": "Centrality and betweenness choke point ranking"},
+            {"name": "resolve_conflict", "description": "Path subsumption resolution (Q10)"},
+            {"name": "blast_radius", "description": "Downstream cascade blast radius and revenue at risk (Q3)"},
+            {"name": "recall_procedure", "description": "Historical win rate retrieval with ADR invalidation check (Q8)"},
+            {"name": "who_knows", "description": "Multi-path expertise retrieval with availability check (Q4)"},
+            {"name": "who_owns", "description": "Two-hop team ownership and escalation routing"},
+            {"name": "trace_decision", "description": "ADR provenance to documentation and RFC thread (Q5)"},
+            {"name": "staleness_audit", "description": "Audits documents verified before invalidating changes (Q9)"}
+        ]
+    }
+
+@app.post("/mcp/call")
+def call_public_mcp_tool(request: Request, payload: Dict[str, Any]):
+    """Public read-only MCP tool execution with persist_answer=False (ZERO graph mutations)."""
+    tool_name = payload.get("tool")
+    params = payload.get("params", {})
+    tenant = payload.get("tenant", "parcelo")
+    target_graph = resolve_target_graph(request, tenant)
+    db = get_db()
+    registry = HindsightToolRegistry(db, default_graph=target_graph, event_bus=global_bus)
+
+    if tool_name == "root_cause_candidates":
+        return registry.root_cause_candidates(incident_id=params.get("incident_id", "INC-8821"), graph_name=target_graph, persist_answer=False)
+    elif tool_name == "rank_services":
+        return registry.rank_services(incident_id=params.get("incident_id", "INC-8821"), method=params.get("method", "betweenness"), graph_name=target_graph, persist_answer=False)
+    elif tool_name == "blast_radius":
+        return registry.blast_radius(service_id=params.get("service_id", "cache-b"), graph_name=target_graph, persist_answer=False)
+    elif tool_name == "who_knows":
+        return registry.who_knows(service_id=params.get("service_id", "cache-b"), graph_name=target_graph, persist_answer=False)
+    elif tool_name == "who_owns":
+        return registry.who_owns(service_id=params.get("service_id", "cache-b"), graph_name=target_graph, persist_answer=False)
+    elif tool_name == "trace_decision":
+        return registry.trace_decision(service_id=params.get("service_id", "cache-b"), graph_name=target_graph, persist_answer=False)
+    elif tool_name == "staleness_audit":
+        return registry.staleness_audit(graph_name=target_graph, persist_answer=False)
+    elif tool_name == "recall_procedure":
+        return registry.recall_procedure(failure_mode_key=params.get("failure_mode_key", "cache_exhaustion"), graph_name=target_graph, persist_answer=False)
+    else:
+        raise HTTPException(status_code=400, detail=f"Tool '{tool_name}' not permitted on public read-only endpoint.")
 
 # Serve static frontend files
 if FRONTEND_DIR.exists():

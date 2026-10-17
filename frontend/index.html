@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.0/cytoscape.min.js"></script>
-  <link rel="stylesheet" href="/static/index.css">
+  <link rel="stylesheet" href="/static/index.css?v=1.1">
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -49,9 +49,19 @@
         <span class="chip-label">GRAPH COUNTS</span>
         <span class="chip-val cyan" id="graph-count-chip">-- nodes / -- edges</span>
       </div>
+      <div class="metric-chip fork-chip" title="Visitor isolated copy-on-write fork (s:session) created via FalkorDB GRAPH.COPY">
+        <span class="chip-label">SESSION FORK</span>
+        <span class="chip-val green" id="session-chip">s:init</span>
+      </div>
+      <!-- Graph OFF / ON Visible Toggle Switch -->
+      <div class="graph-toggle-wrap" title="Toggle between FalkorDB Graph Reasoning and Keyword TF-IDF Baseline">
+        <button id="btn-graph-toggle" class="btn btn-toggle-graph on" title="Click to toggle Graph Reasoning ON or OFF">
+          <span class="toggle-dot"></span>
+          <span id="graph-toggle-text">GRAPH ON</span>
+        </button>
+      </div>
     </div>
 
-    <!-- Actions & Storm Trigger -->
     <!-- Actions & Controls -->
     <div class="actions">
       <!-- Tenant Switcher -->
@@ -86,6 +96,10 @@
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
         </svg>
         <span id="btn-run-text">Run the Storm</span>
+      </button>
+
+      <button id="btn-reset-graph" class="btn btn-outline" title="Reset your visitor graph fork (s:session) from golden tenant graph (takes ~50ms)">
+        <span>↺ Reset Fork</span>
       </button>
 
       <!-- Worker Race Button (Cap 32) -->
@@ -129,14 +143,16 @@
           <path d="M18 9a9 9 0 0 1-9 9"></path>
         </svg>
       </button>
-
-      <button id="btn-reset-graph" class="btn btn-ghost" title="Reset Graph to Initial Golden Topology">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>
-        </svg>
-      </button>
     </div>
   </header>
+
+  <!-- Baseline Active Banner (shown when GRAPH OFF is toggled) -->
+  <div id="baseline-banner" class="baseline-banner hidden">
+    <div class="banner-content">
+      <span class="banner-badge">BASELINE MODE (GRAPH OFF)</span>
+      <span class="banner-text">Operating in flat TF-IDF lexical search mode. Multi-hop causality, temporal invalidation, and expertise availability are <strong>DISABLED</strong>.</span>
+    </div>
+  </div>
 
   <!-- Main War Room Grid Layout -->
   <main class="war-room-container">
@@ -654,7 +670,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=1.1"></script>
 </body>
 </html>
 

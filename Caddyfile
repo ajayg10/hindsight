@@ -1,0 +1,27 @@
+{
+    admin off
+}
+
+{$DOMAIN:localhost} {
+    encode gzip zstd
+
+    # Real-time Server-Sent Events must bypass proxy buffering
+    @sse path /api/events
+    handle @sse {
+        reverse_proxy web:8000 {
+            flush_interval -1
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # All API and UI requests reverse proxied to web service
+    handle {
+        reverse_proxy web:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}

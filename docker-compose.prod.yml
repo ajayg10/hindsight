@@ -1,0 +1,60 @@
+name: hindsight-prod
+services:
+  falkordb:
+    image: ${FALKORDB_IMAGE:-falkordb/falkordb:latest}
+    restart: always
+    volumes:
+      - falkor-prod-data:/data
+    networks:
+      - graph-prod
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  web:
+    restart: always
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.spikes
+    environment:
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
+      ENV: production
+      PORT: 8000
+    networks:
+      - graph-prod
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    command: >
+      sh -c "python -m seed.plant &&
+             python -m seed.tenants &&
+             uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-prod-data:/data
+      - caddy-prod-config:/config
+    networks:
+      - graph-prod
+    depends_on:
+      - web
+
+networks:
+  graph-prod:
+    driver: bridge
+
+volumes:
+  falkor-prod-data:
+  caddy-prod-data:
+  caddy-prod-config:
