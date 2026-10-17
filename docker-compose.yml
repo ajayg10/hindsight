@@ -26,6 +26,7 @@ services:
       - ./seed:/work/seed
       - ./scripts:/work/scripts
       - ./frontend:/work/frontend
+      - ./eval:/work/eval
     networks: [graph]
     depends_on:
       falkordb:

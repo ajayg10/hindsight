@@ -244,19 +244,32 @@ class HindsightToolRegistry:
             reason = f"Hypothesis '{subsuming}' subsumes '{subsumed}': upstream failure explains downstream alerts via {hops}-hop dependency path."
             conflict_resolved = True
         else:
-            # Fallback direct path check if hypothesis nodes not yet committed
-            res = g.query("MATCH (b:Service {id:'checkout-api'}), (a:Service {id:'cache-b'}), p=shortestPath((b)-[:DEPENDS_ON*1..5]->(a)) RETURN length(p)").result_set
-            if res:
-                hops = res[0][0]
-                subsuming, subsumed = "hyp-a", "hyp-b"
-                reason = f"Upstream service cache-b subsumes downstream checkout-api ({hops} hop path)."
+            # Fallback path check between the two candidate hypotheses
+            res = g.query("""
+            MATCH (h1:Hypothesis)-[:ROOT]->(s1:Service),
+                  (h2:Hypothesis)-[:ROOT]->(s2:Service)
+            WHERE (h1.id = $ha OR h1.incident = $inc) AND (h2.id = $hb OR h2.incident = $inc) AND h1.id <> h2.id
+            WITH h1, h2, s1, s2, shortestPath((s2)-[:DEPENDS_ON*1..5]->(s1)) AS p
+            WHERE p IS NOT NULL
+            RETURN h1.id AS subsuming, h2.id AS subsumed, length(p) AS hops, s1.id AS s_subsuming, s2.id AS s_subsumed
+            LIMIT 1
+            """, {"ha": hypothesis_a, "hb": hypothesis_b, "inc": incident_id}).result_set
+
+            if res and res[0][0] is not None:
+                subsuming, subsumed, hops = res[0][0], res[0][1], res[0][2]
+                s_top, s_sub = res[0][3], res[0][4]
+                reason = f"Upstream service {s_top} ({subsuming}) subsumes downstream {s_sub} ({subsumed}) via {hops}-hop path."
                 conflict_resolved = True
             else:
                 subsuming, subsumed, hops = None, None, 0
                 reason = "No path between candidate root causes; multi-fault incident retained."
                 conflict_resolved = False
 
-        evidence = [("Service", "cache-b"), ("Service", "checkout-api")]
+        evidence = []
+        if subsuming:
+            evidence.append(("Hypothesis", subsuming))
+        if subsumed:
+            evidence.append(("Hypothesis", subsumed))
         ans_id = self._record_answer(target_g, "resolve_conflict", "q10_conflict.cypher", rule.rule_id, reason, evidence, persist=persist_answer)
 
         self.bus.emit("conflict", {
