@@ -5,3 +5,8 @@ __pycache__/
 node_modules/
 frontend/dist/
 seed/out/*.rdb
+frontend/out/
+frontend/.next/
+frontend/node_modules/
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
