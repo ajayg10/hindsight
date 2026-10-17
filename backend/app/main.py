@@ -11,6 +11,7 @@ Provides:
 """
 import asyncio
 from dataclasses import asdict
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -339,7 +340,14 @@ def company_query(payload: Dict[str, Any]):
 def get_facts_ledger(tenant: str = "parcelo"):
     """
     Returns temporal fact ledger with current and superseded facts.
+    All timestamps and validity dates are strictly derived from DemoClock.
+    ADR-17 valid_to is exactly DemoClock.now_ms - 6 days.
     """
+    clock = DemoClock.frozen()
+    now_ms = clock.now_ms
+    adr17_ms = clock.adr17_ms  # exactly clock - 6 days
+    month_ago_ms = now_ms - (30 * 24 * 3600 * 1000)
+
     db = get_db()
     g = db.select_graph(f"t:{tenant}")
     
@@ -353,6 +361,8 @@ def get_facts_ledger(tenant: str = "parcelo"):
 
     facts = []
     for r in rows:
+        v_from = r[6]
+        v_to = r[7]
         facts.append({
             "id": r[0],
             "subject": r[1],
@@ -360,8 +370,10 @@ def get_facts_ledger(tenant: str = "parcelo"):
             "object": r[3],
             "status": r[4],
             "confidence": float(r[5]) if r[5] is not None else 1.0,
-            "valid_from": r[6],
-            "valid_to": r[7],
+            "valid_from": v_from,
+            "valid_to": v_to,
+            "valid_from_iso": datetime.fromtimestamp(v_from / 1000, tz=timezone.utc).strftime("%Y-%m-%d") if v_from else None,
+            "valid_to_iso": datetime.fromtimestamp(v_to / 1000, tz=timezone.utc).strftime("%Y-%m-%d") if v_to else None,
             "applied": bool(r[8]),
             "supersedes": r[9],
             "supersede_reason": r[10]
@@ -376,8 +388,10 @@ def get_facts_ledger(tenant: str = "parcelo"):
                 "object": "cache-b",
                 "status": "current",
                 "confidence": 1.0,
-                "valid_from": 1791495660000,
+                "valid_from": adr17_ms,
                 "valid_to": None,
+                "valid_from_iso": datetime.fromtimestamp(adr17_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
+                "valid_to_iso": None,
                 "applied": True,
                 "supersedes": "fact-dep-checkout-cache-a",
                 "supersede_reason": "ADR-17 migration to Redis Cluster"
@@ -389,15 +403,24 @@ def get_facts_ledger(tenant: str = "parcelo"):
                 "object": "cache-a",
                 "status": "superseded",
                 "confidence": 1.0,
-                "valid_from": 1789422060000,
-                "valid_to": 1791495660000,
+                "valid_from": month_ago_ms,
+                "valid_to": adr17_ms,
+                "valid_from_iso": datetime.fromtimestamp(month_ago_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
+                "valid_to_iso": datetime.fromtimestamp(adr17_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
                 "applied": True,
                 "supersedes": None,
                 "supersede_reason": "Superseded by ADR-17"
             }
         ]
 
-    return {"facts": facts, "count": len(facts)}
+    return {
+        "facts": facts,
+        "count": len(facts),
+        "demo_clock_now_ms": now_ms,
+        "demo_clock_now_iso": datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
+        "adr17_valid_to_ms": adr17_ms,
+        "adr17_valid_to_iso": datetime.fromtimestamp(adr17_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+    }
 
 @app.get("/api/runbooks")
 def get_runbooks(tenant: str = "parcelo"):

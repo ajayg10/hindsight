@@ -125,7 +125,7 @@ def plant_golden_slice(db, graph_name="t:parcelo"):
         }]->(b)
         """, {"a": a, "b": b, "valid_from": edge_valid_from, "fact_id": fact_id})
 
-    # 3. Plant Closed History: checkout-api -> cache-a (superseded by ADR-17)
+    # 3. Plant Closed History: checkout-api -> cache-a (superseded by ADR-17) and Fact Ledger nodes
     g.query("""
     MATCH (a:Service {id:'checkout-api'}), (b:Service {id:'cache-a'})
     CREATE (a)-[:DEPENDED_ON {
@@ -134,6 +134,30 @@ def plant_golden_slice(db, graph_name="t:parcelo"):
         fact_id: 'fact-dep-checkout-cache-a',
         ended_by: 'change-adr-17'
     }]->(b)
+
+    CREATE (f_b:Fact {
+        id: 'fact-dep-checkout-cache-b',
+        subject: 'checkout-api',
+        predicate: 'DEPENDS_ON',
+        object: 'cache-b',
+        status: 'current',
+        confidence: 1.0,
+        valid_from: $adr17_time,
+        valid_to: null,
+        applied: true
+    })
+    CREATE (f_a:Fact {
+        id: 'fact-dep-checkout-cache-a',
+        subject: 'checkout-api',
+        predicate: 'DEPENDS_ON',
+        object: 'cache-a',
+        status: 'superseded',
+        confidence: 1.0,
+        valid_from: $month_ago,
+        valid_to: $adr17_time,
+        applied: true
+    })
+    CREATE (f_b)-[:SUPERSEDES {reason: 'ADR-17 migration to Redis Cluster', at: $adr17_time}]->(f_a)
     """, {"month_ago": month_ago, "adr17_time": adr17_time})
 
     # 4. Plant ADR-17 Decision, Change, Doc, Thread, and Message

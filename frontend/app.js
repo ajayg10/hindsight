@@ -338,7 +338,7 @@ function appendTerminalEntry(ev) {
   let summary = "";
   if (ev.event_type === "alert") summary = `Service: ${p.service} | metric: ${p.metric}=${p.value}`;
   else if (ev.event_type === "incident_created") summary = `Collapsed ${p.count} alerts into ${p.incident_id}`;
-  else if (ev.event_type === "hypothesis") summary = `${p.agent_id} (${p.heuristic}) -> root: ${p.root_service} (conf: ${p.confidence})`;
+  else if (ev.event_type === "hypothesis") summary = `${p.agent_id} (${p.heuristic}) -> root: ${p.root_service} (heuristic score: ${p.heuristic_score !== undefined ? p.heuristic_score : p.confidence})`;
   else if (ev.event_type === "conflict") summary = p.reason;
   else if (ev.event_type === "handoff") summary = `${p.from_agent} -> ${p.to_agent} with evidence: ${JSON.stringify(p.evidence_ids)}`;
   else if (ev.event_type === "procedure_refused") summary = `Refused ${p.procedure_id} (${(p.win_rate*100).toFixed(1)}% win rate) invalidated by ${JSON.stringify(p.invalidating_changes)}`;
@@ -387,9 +387,10 @@ function updateCrewLanes(ev) {
   else if (ev.event_type === "hypothesis") {
     if (p.agent_id === "investigator-a") {
       document.getElementById("status-inv-a").textContent = "Hypothesis Asserted";
+      const score = p.heuristic_score !== undefined ? p.heuristic_score : p.confidence;
       document.getElementById("content-inv-a").innerHTML = `
         <div class="card-detail">
-          Target: <strong>${p.root_service}</strong> (confidence: ${p.confidence})<br>
+          Target: <strong>${p.root_service}</strong> (heuristic score: ${score})<br>
           Traversed upstream dependencies across all 9 alerts (Q2).
         </div>
       `;
@@ -400,9 +401,10 @@ function updateCrewLanes(ev) {
       }
     } else if (p.agent_id === "investigator-b") {
       document.getElementById("status-inv-b").textContent = "Hypothesis Asserted";
+      const score = p.heuristic_score !== undefined ? p.heuristic_score : p.confidence;
       document.getElementById("content-inv-b").innerHTML = `
         <div class="card-detail">
-          Target: <strong>${p.root_service}</strong> (confidence: ${p.confidence})<br>
+          Target: <strong>${p.root_service}</strong> (heuristic score: ${score})<br>
           Highest betweenness bridge among alerting nodes (score: 3.0).
         </div>
       `;
@@ -841,8 +843,8 @@ function initControls() {
           <span class="fact-triple ${isSuper ? 'struck-triple' : ''}">${isSuper ? '<s>' : ''}${f.subject} —[${f.predicate}]—&gt; ${f.object}${isSuper ? '</s>' : ''}</span>
         </div>
         <div class="fact-right">
-          ${isSuper ? `<span class="fact-superseded-reason">Invalidated by: ${f.supersedes || f.supersede_reason || 'change-adr-17'}</span>` : `<span>Confidence: ${(f.confidence || 1.0).toFixed(2)}</span>`}
-          <span>Valid: ${f.valid_from ? new Date(f.valid_from).toISOString().slice(0, 10) : '2026-09-20'} &rarr; ${f.valid_to ? new Date(f.valid_to).toISOString().slice(0, 10) : 'Present'}</span>
+          ${isSuper ? `<span class="fact-superseded-reason">Invalidated by: ${f.supersedes || f.supersede_reason || 'change-adr-17'}</span>` : `<span>Heuristic Score: ${(f.confidence || 1.0).toFixed(2)}</span>`}
+          <span>Valid: ${f.valid_from_iso || (f.valid_from ? new Date(f.valid_from).toISOString().slice(0, 10) : '2026-09-15')} &rarr; ${f.valid_to ? (f.valid_to_iso || new Date(f.valid_to).toISOString().slice(0, 10)) : 'Present'}</span>
         </div>
       `;
       listEl.appendChild(item);

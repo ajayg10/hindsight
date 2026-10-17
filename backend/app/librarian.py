@@ -38,6 +38,9 @@ def recompute_expertise(db, graph_name="t:parcelo", now=None, half_life_ms=30*86
     WITH p, s, doc_count, inc_count, msg_count, total_evidence,
          CASE WHEN size(valid_times) > 0 THEN apoc.coll.max(valid_times) ELSE $now END AS max_t
     // Bounded formula: 1 - exp(-k * E) recalibrated with k=0.17
+    // Calibration disclosure: k=0.17 was calibrated so the seeded evidence yields:
+    // - Priya Sharma (E=14 items): 1 - exp(-0.17 * 14) = 1 - 0.0926 = 0.9074 ~ 0.91 (heuristic score)
+    // - Marco Rossi  (E=8 items):  1 - exp(-0.17 * 8)  = 1 - 0.2567 = 0.7433 ~ 0.74 (heuristic score)
     WITH p, s, total_evidence, max_t,
          round((1.0 - exp(-0.17 * total_evidence)) * 100.0) / 100.0 AS score
     MERGE (p)-[e:EXPERT_IN]->(s)

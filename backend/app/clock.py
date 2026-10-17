@@ -19,8 +19,9 @@ class DemoClock:
     @classmethod
     def frozen(cls):
         # Scenario time is synthetic and independent of the real event clock.
-        # Frozen at 2026-10-15T03:11:00+05:30
-        dt = datetime.fromisoformat("2026-10-15T03:11:00+05:30")
+        # Frozen at 2026-10-15T12:00:00Z (demo day Oct 15)
+        # ADR-17 is placed at exactly clock minus 6 days (Oct 09)
+        dt = datetime(2026, 10, 15, 12, 0, 0, tzinfo=timezone.utc)
         return cls(int(dt.timestamp() * 1000))
 
     @classmethod

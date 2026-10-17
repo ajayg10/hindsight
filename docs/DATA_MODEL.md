@@ -112,3 +112,30 @@ Where:
 > - **Alex Chen**: 0 evidence items on `cache-b`, yielding score $0.0$.
 >
 > When Priya is on leave (`status: 'leave'`), the routing policy dynamically reroutes requests to the next highest scoring active expert (Marco, 0.74). The scores are derived directly by query traversal and verifiable via `q04_who_knows.cypher`. No hardcoded names or literals exist in the calculation engine.
+
+---
+
+## Investigator Heuristic Scoring & Calibration
+
+Investigator agent scores represent heuristic ranking metrics for candidate hypotheses rather than Bayesian posterior probabilities:
+
+### 1. Investigator-A Heuristic Score (Common Upstream Dependency)
+- **Concept**: Upstream common dependency intersection traversing alerting services ($Q2$).
+- **Inputs**:
+  - $coverage = \frac{alerts\_covered}{total\_alerts}$
+  - $hops = \max(1, nearest\_distance)$
+- **Formula**:
+  $$\text{heuristic\_score} = \text{round}\left( coverage \times \frac{1.0}{1.0 + 0.05 \cdot (hops - 1)}, 2 \right)$$
+- **Properties**:
+  - At $1$ hop ($hops = 1$), distance penalty is $0.0$, yielding exactly $1.00$ for full coverage ($9/9$ alerts).
+  - At $2$ hops ($hops = 2$), distance penalty is $0.05$, yielding $\frac{1}{1.05} \approx 0.95$ for full coverage.
+  - For partial coverage (e.g. $6/9$ alerts at $1$ hop), score scales linearly with alert coverage ($0.67$).
+
+### 2. Investigator-B Heuristic Score (Betweenness Centrality Bridge)
+- **Concept**: Graph choke-point and bridge centrality among alerting nodes via betweenness.
+- **Inputs**:
+  - $bw\_share = \frac{betweenness(top\_service)}{\sum betweenness(alerting\_services)}$
+- **Formula**:
+  $$\text{heuristic\_score} = \text{round}\left( \min(0.90, 0.50 + 0.35 \cdot bw\_share), 2 \right)$$
+- **Disclosure**:
+  This is an affine calibration map bounded to $[0.50, 0.90]$ that reflects bridge prominence without masquerading as an absolute probability.
