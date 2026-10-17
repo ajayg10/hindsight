@@ -202,38 +202,115 @@ def plant_golden_slice(db, graph_name="t:parcelo"):
         "month_ago": month_ago
     })
 
-    # 6. Plant Expertise (Priya 0.91 on leave, Marco 0.74 active with INC-0412)
+    # 6. Plant Operational Evidence and Expertise (Priya 14 evidence -> ~0.91 on leave, Marco 8 evidence -> ~0.74 active)
     one_day_ms = 86400 * 1000
     g.query("""
     MATCH (priya:Person {id:'priya'}), (marco:Person {id:'marco'}), (cb:Service {id:'cache-b'})
-    CREATE (priya)-[:EXPERT_IN {
-        score: 0.91,
-        evidence_count: 14,
-        last_evidence_at: $last_evidence_priya,
-        computed_at: $now
-    }]->(cb)
-    CREATE (marco)-[:EXPERT_IN {
-        score: 0.74,
-        evidence_count: 8,
-        last_evidence_at: $last_evidence_marco,
-        computed_at: $now
-    }]->(cb)
 
-    CREATE (inc:Episode {
+    // Priya evidence nodes: 2 docs + 2 incidents + 10 messages = 14 evidence items
+    CREATE (d_priya2:Doc {
+        id: 'doc-cache-b-spec',
+        title: 'Redis Cluster cache-b Specification & Sharding Topology',
+        kind: 'spec',
+        last_verified_at: $adr17_time
+    })-[:DESCRIBES]->(cb)
+    CREATE (priya)-[:AUTHORED]->(d_priya2)
+
+    CREATE (inc_p1:Episode {
+        id: 'INC-0301',
+        kind: 'incident',
+        outcome: 'success',
+        t_start: $now - 25 * 86400000,
+        t_end: $now - 25 * 86400000 + 1800000
+    })-[:INVOLVED]->(cb)
+    CREATE (priya)-[:RESOLVED]->(inc_p1)
+
+    CREATE (inc_p2:Episode {
+        id: 'INC-0342',
+        kind: 'incident',
+        outcome: 'success',
+        t_start: $now - 18 * 86400000,
+        t_end: $now - 18 * 86400000 + 1800000
+    })-[:INVOLVED]->(cb)
+    CREATE (priya)-[:RESOLVED]->(inc_p2)
+
+    // Marco evidence nodes: 1 doc + 2 incidents + 5 messages = 8 evidence items
+    CREATE (d_marco1:Doc {
+        id: 'doc-cache-b-ops',
+        title: 'cache-b Operational Playbook & Metrics Runbook',
+        kind: 'runbook',
+        last_verified_at: $adr17_time
+    })-[:DESCRIBES]->(cb)
+    CREATE (marco)-[:AUTHORED]->(d_marco1)
+
+    CREATE (inc_m1:Episode {
         id: 'INC-0412',
         kind: 'incident',
         outcome: 'success',
         t_start: $inc_start,
         t_end: $inc_end
+    })-[:INVOLVED]->(cb)
+    CREATE (marco)-[:RESOLVED]->(inc_m1)
+
+    CREATE (inc_m2:Episode {
+        id: 'INC-0377',
+        kind: 'incident',
+        outcome: 'success',
+        t_start: $now - 15 * 86400000,
+        t_end: $now - 15 * 86400000 + 1800000
+    })-[:INVOLVED]->(cb)
+    CREATE (marco)-[:RESOLVED]->(inc_m2)
+    """, {
+        "now": now,
+        "adr17_time": adr17_time,
+        "inc_start": now - (12 * one_day_ms),
+        "inc_end": now - (12 * one_day_ms) + 1800000
     })
-    CREATE (inc)-[:INVOLVED]->(cb)
-    CREATE (marco)-[:RESOLVED]->(inc)
+
+    # Plant messages: Priya (9 more, total 10 msgs), Marco (5 msgs)
+    g.query("""
+    MATCH (priya:Person {id:'priya'}), (cb:Service {id:'cache-b'})
+    UNWIND range(1, 9) AS idx
+    CREATE (m:Message {
+        id: 'msg-priya-' + toString(idx),
+        text: 'Priya architectural note ' + toString(idx) + ' regarding cache-b Redis cluster partitioning',
+        at: $now - (idx * 86400000)
+    })
+    CREATE (priya)-[:AUTHORED]->(m)
+    CREATE (m)-[:MENTIONS]->(cb)
+    """, {"now": now})
+
+    g.query("""
+    MATCH (marco:Person {id:'marco'}), (cb:Service {id:'cache-b'})
+    UNWIND range(1, 5) AS idx
+    CREATE (m:Message {
+        id: 'msg-marco-' + toString(idx),
+        text: 'Marco operational tuning ' + toString(idx) + ' for cache-b client buffers and connection pools',
+        at: $now - (idx * 86400000)
+    })
+    CREATE (marco)-[:AUTHORED]->(m)
+    CREATE (m)-[:MENTIONS]->(cb)
+    """, {"now": now})
+
+    # Plant EXPERT_IN relationships derived using the bounded formula 1 - exp(-0.17 * E)
+    g.query("""
+    MATCH (priya:Person {id:'priya'}), (marco:Person {id:'marco'}), (cb:Service {id:'cache-b'})
+    CREATE (priya)-[:EXPERT_IN {
+        score: round((1.0 - exp(-0.17 * 14)) * 100.0) / 100.0,
+        evidence_count: 14,
+        last_evidence_at: $last_evidence_priya,
+        computed_at: $now
+    }]->(cb)
+    CREATE (marco)-[:EXPERT_IN {
+        score: round((1.0 - exp(-0.17 * 8)) * 100.0) / 100.0,
+        evidence_count: 8,
+        last_evidence_at: $last_evidence_marco,
+        computed_at: $now
+    }]->(cb)
     """, {
         "now": now,
         "last_evidence_priya": now - (one_day_ms // 2),
-        "last_evidence_marco": now - (one_day_ms // 2),
-        "inc_start": now - (12 * one_day_ms),
-        "inc_end": now - (12 * one_day_ms) + 1800000
+        "last_evidence_marco": now - (one_day_ms // 2)
     })
 
     # 7. Plant FailureMode & Procedures (R-7 stale by ADR-17 path; R-12 valid ~61%)

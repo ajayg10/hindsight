@@ -86,23 +86,29 @@ The score aggregates three distinct forms of operational evidence:
    `MATCH (p:Person)-[:AUTHORED]->(m:Message)-[:MENTIONS]->(s:Service)`
    Captures active participation in technical proposals and architecture threads.
 
-### 2. Normalization & Saturation Formula
-To prevent single-source gaming while rewarding multi-modal contribution, scores are normalized with a diminishing returns saturation denominator:
+### 2. Bounded Exponential Saturation Formula
+To prevent score inflation while ensuring mathematical bounding on $[0, 1)$ with diminishing returns, scores are computed using a bounded exponential saturation model:
 
-$$\text{raw\_score} = \frac{w_{doc} \cdot N_{doc} + w_{inc} \cdot N_{inc} + w_{msg} \cdot N_{msg}}{1.0 + 0.25 \cdot (N_{doc} + N_{inc} + N_{msg})}$$
+$$\text{score} = 1 - \exp(-k \cdot E)$$
 
 Where:
-- $N_{doc}$: count of distinct docs authored describing the target service.
-- $N_{inc}$: count of distinct successful incident episodes resolved involving the service.
-- $N_{msg}$: count of authored messages/RFC comments mentioning the service.
-- Weights: $w_{doc} = 0.35, w_{inc} = 0.45, w_{msg} = 0.20$.
-- Saturation coefficient $\alpha = 0.25$.
+- $E = N_{doc} + N_{inc} + N_{msg}$: Total evidence count across authored documents, resolved incidents, and architecture discussion messages.
+- $k = 0.17$: Exponential decay/saturation constant calibrated to benchmark domain evidence.
+- The score is rounded to two decimal places: $\text{round}((1.0 - \exp(-0.17 \cdot E)) \cdot 100.0) / 100.0$.
+- Mathematical properties:
+  - $\text{score}(0) = 0.0$ (no unearned expertise).
+  - $\lim_{E \to \infty} \text{score}(E) = 1.0$ (strictly bounded, immune to asymptotic overflow).
+  - Monotonically strictly increasing ($\frac{d}{dE} > 0$).
+  - Naturally produces diminishing returns per incremental evidence item.
 
-### 3. Synthetic Seed Calibration Disclosure
+### 3. Seed Calibration Disclosure
 > [!NOTE]
 > **Synthetic Calibration Notice**:
-> The scenario evidence in `seed/plant.py` is synthetic data created for reproducible benchmarking. The evidence counts and timestamps were deliberately seeded such that:
-> - **Priya Sharma** has authored key architectural documents (`doc-adr-17`), initiated RFC discussions (`msg-priya-adr17`), and resolved historical incidents (total evidence count $N=14$), yielding an `EXPERT_IN` score of **0.91**.
-> - **Marco Rossi** has resolved production incidents (`INC-0412`) and authored operational manuals (total evidence count $N=8$), yielding an `EXPERT_IN` score of **0.74**.
+> The operational evidence subgraph in `seed/plant.py` seeds concrete evidence nodes:
+> - **Priya Sharma**: 2 authored docs (`doc-adr-17`, `doc-cache-b-spec`), 2 resolved incidents (`INC-0301`, `INC-0342`), and 10 architecture messages (`msg-priya-adr17`, `msg-priya-1..9`), giving total evidence count $E=14$.
+>   $$\text{score} = 1 - \exp(-0.17 \times 14) = 1 - \exp(-2.38) = 1 - 0.09255 \approx \mathbf{0.91}$$
+> - **Marco Rossi**: 1 authored runbook (`doc-cache-b-ops`), 2 resolved incidents (`INC-0412`, `INC-0377`), and 5 operational tuning messages (`msg-marco-1..5`), giving total evidence count $E=8$.
+>   $$\text{score} = 1 - \exp(-0.17 \times 8) = 1 - \exp(-1.36) = 1 - 0.25666 \approx \mathbf{0.74}$$
+> - **Alex Chen**: 0 evidence items on `cache-b`, yielding score $0.0$.
 >
-> When Priya is on leave (`on_leave: true`), the routing policy dynamically reroutes requests to the next highest scoring available expert (Marco, 0.74). The scores are derived directly by query traversal and verifiable via `q04_who_knows.cypher`.
+> When Priya is on leave (`status: 'leave'`), the routing policy dynamically reroutes requests to the next highest scoring active expert (Marco, 0.74). The scores are derived directly by query traversal and verifiable via `q04_who_knows.cypher`. No hardcoded names or literals exist in the calculation engine.

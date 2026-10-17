@@ -37,16 +37,11 @@ def recompute_expertise(db, graph_name="t:parcelo", now=None, half_life_ms=30*86
          CASE WHEN size(timestamps) > 0 THEN [t IN timestamps WHERE t IS NOT NULL | t] ELSE [$now] END AS valid_times
     WITH p, s, doc_count, inc_count, msg_count, total_evidence,
          CASE WHEN size(valid_times) > 0 THEN apoc.coll.max(valid_times) ELSE $now END AS max_t
-    // Raw score formula tuned to reproduce 0.91 (Priya) and 0.74 (Marco) on cache-b
+    // Bounded formula: 1 - exp(-k * E) recalibrated with k=0.17
     WITH p, s, total_evidence, max_t,
-         round((0.35 * doc_count + 0.45 * inc_count + 0.20 * msg_count) / 
-               (1.0 + 0.25 * (doc_count + inc_count + msg_count)) * 100.0) / 100.0 AS raw_score
+         round((1.0 - exp(-0.17 * total_evidence)) * 100.0) / 100.0 AS score
     MERGE (p)-[e:EXPERT_IN]->(s)
-    SET e.score = CASE
-            WHEN p.id = 'priya' AND s.id = 'cache-b' THEN 0.91
-            WHEN p.id = 'marco' AND s.id = 'cache-b' THEN 0.74
-            ELSE raw_score
-        END,
+    SET e.score = score,
         e.evidence_count = total_evidence,
         e.last_evidence_at = max_t,
         e.computed_at = $now
@@ -66,13 +61,10 @@ def recompute_expertise(db, graph_name="t:parcelo", now=None, half_life_ms=30*86
     WHERE doc_count > 0 OR inc_count > 0 OR msg_count > 0
     WITH p, s, doc_count, inc_count, msg_count,
          (doc_count + inc_count + msg_count) AS total_evidence
+    WITH p, s, total_evidence,
+         round((1.0 - exp(-0.17 * total_evidence)) * 100.0) / 100.0 AS score
     MERGE (p)-[e:EXPERT_IN]->(s)
-    SET e.score = CASE
-            WHEN p.id = 'priya' AND s.id = 'cache-b' THEN 0.91
-            WHEN p.id = 'marco' AND s.id = 'cache-b' THEN 0.74
-            ELSE round((0.35 * doc_count + 0.45 * inc_count + 0.20 * msg_count) / 
-                       (1.0 + 0.25 * (doc_count + inc_count + msg_count)) * 100.0) / 100.0
-        END,
+    SET e.score = score,
         e.evidence_count = total_evidence,
         e.last_evidence_at = $now - 43200000,
         e.computed_at = $now
