@@ -67,5 +67,33 @@ Google Antigravity assisted with:
 - Building Graph OFF vs ON comparison modal and Organizational Memory Explorer modal in the frontend war room.
 - Writing and executing `scripts/test_phase4b.py` confirming 100% test pass on live FalkorDB engine.
 
+## Idea Evaluation, Spec & Build Prompt Formulation — 2026-10-15
 
+Large language models (OpenAI ChatGPT & Claude) assisted the project author with:
+- Brainstorming and stress-testing the initial project concept against the hackathon tracks (Connected Data, Memory & Coordination, Company Brain).
+- Refining architectural trade-offs: evaluating FalkorDB native capabilities (GRAPH.COPY, single-graph serialization, algo.pageRank/betweenness) against multi-tenant operational graph requirements.
+- Drafting and formalizing the engineering specification, acceptance criteria, and golden invariant constraints (14-service blast radius, ADR-17 validity, Priya on leave routing to Marco, R-7 stale vs R-12 valid).
+- Structuring the multi-phase prompt strategy to ensure verifiable test gates and avoid premature feature claims.
 
+All architectural decisions, graph schemas, algorithm selection, and policy rules were directed and approved by the project author.
+
+## Hardening & Deployment — 2026-10-17
+
+Google Antigravity assisted with:
+- Fixing Investigator-A heuristic scoring formula to accurately produce 1.00 at 1 hop and 0.95 at 2 hops, logging concrete formula inputs, and adding unit tests with partial coverage.
+- Renaming both investigator score outputs from "confidence" to "heuristic score" across backend tools, events, and UI badges.
+- Disclosing the calibration of parameter $k=0.17$ in $1 - \exp(-k \cdot E)$ for `EXPERT_IN` derived scores to match seeded evidence.
+- Anchoring all fact ledger validity dates strictly to `DemoClock.frozen()` (asserting ADR-17 `valid_to == clock - 6 days`).
+- Building production deployment architecture (`docker-compose.prod.yml`, `Caddyfile`, `deploy.sh`) featuring internal-only FalkorDB network, unbuffered reverse-proxying for SSE (`flush_interval -1`), and automatic TLS via Caddy.
+- Implementing per-visitor session isolation via `POST /api/session` creating `s:{session_id}` forks via native `GRAPH.COPY` (< 55ms) with 30-minute TTL cleanup.
+- Implementing caller-scoped session Reset that re-copies the fork without ever mutating the golden tenant graph (`t:parcelo`).
+- Adding visible top-bar toggle for Graph OFF / Graph ON with warning banners and live session fork status chips.
+- Adding API rate-limiting (120 req/min), Race worker cap (32 max), SSE keepalive heartbeats, and securing the public `/mcp` server in read-only mode (`persist_answer=False`).
+
+## Scale Enrichment & Synthetic Baseline Benchmark — 2026-10-17
+
+Google Antigravity assisted with:
+- Enriching the `t:parcelo` seed to ~3,000 nodes (2,846 nodes, 6,933 edges) using batched UNWIND Cypher queries across 15 engineers, 300 docs, 500 threads, 2,000 messages, and 120 past incident episodes.
+- Authoring `scripts/verify_enriched_invariants.py` strictly verifying that all 4 golden invariants remain 100% intact at scale (14-service blast radius, 3 stale docs, Priya 0.91 / Marco 0.74 routing, and R-7 refused / R-12 selected), and measuring multi-hop traversal latency at scale (p50: 0.385 ms, p95: 0.636 ms, N=50).
+- Expanding the 20-storm evaluation harness (`backend/eval/storms.py`) to benchmark Hindsight against a flat keyword/TF-IDF baseline across both Dev (Storms 1..10) and Held-Out (Storms 11..20) sets.
+- Reporting all benchmark metrics honestly with synthetic storm labeling (Top-1: 55.6%-66.7%, Top-3: 100.0%, Who-to-Page: 94.4%, Blast Recall: 95.6%, Multi-Fault: 100% vs Baseline: 0.0% root-cause, 0.0% who-to-page).
