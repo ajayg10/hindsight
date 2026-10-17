@@ -31,7 +31,21 @@ def test_phase4b_suite():
     print("════════════════════════════════════════════════════════════════════\n")
 
     # 1. Test Baseline Comparison (Graph OFF vs Graph ON)
-    print("[1/5] Testing Baseline Comparison: Graph OFF (TF-IDF) vs Graph ON (Hindsight)...")
+    print("[1/5] Testing Baseline Comparison: Graph OFF (Keyword TF-IDF) vs Graph ON (Hindsight)...")
+    
+    # 1a. Test strict Baseline Independence (no DB client import)
+    import ast
+    baseline_path = ROOT / "backend/app/baseline.py"
+    tree = ast.parse(baseline_path.read_text(encoding="utf-8"))
+    forbidden_modules = {"falkordb", "redis", "psycopg2", "sqlite3", "app.mcp_server"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert alias.name not in forbidden_modules, f"baseline.py illegally imports DB client: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            assert node.module not in forbidden_modules, f"baseline.py illegally imports from DB module: {node.module}"
+    print("  ✓ Architectural boundary: baseline.py contains ZERO DB client imports (strict independence).")
+
     data_b = get_baseline_comparison()
 
     # Graph OFF check
@@ -49,7 +63,7 @@ def test_phase4b_suite():
     assert on["refused_procedure"] == "R-7", f"Expected R-7 refused, got {on['refused_procedure']}"
     assert on["invalidating_change"] == "change-adr-17"
     assert on["policy_rule"] == "RULE-05-STALE-PROCEDURE-REFUSAL"
-    print("  ✓ Graph OFF traps stale runbook R-7 (83.3% win rate on retired cache-a).")
+    print("  ✓ Graph OFF traps stale runbook R-7 (83.3% win rate on retired cache-a from static corpus).")
     print("  ✓ Graph ON refuses R-7 under RULE-05 and safely selects R-12 for active cache-b.")
 
     # 2. Test Time Scrubber (Counterfactual As-Of Timeline)

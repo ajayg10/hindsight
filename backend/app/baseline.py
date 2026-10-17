@@ -1,11 +1,11 @@
 """
 Baseline Comparison Engine (Phase 4b).
-Demonstrates Graph OFF (Text / TF-IDF Keyword Search) vs Graph ON (Hindsight Operational Graph).
+Demonstrates Graph OFF (Keyword (TF-IDF) Baseline) vs Graph ON (Hindsight Operational Graph).
 
 Scenario:
 Symptom: "Redis cache memory saturation and high latency under checkout load"
-- Graph OFF (Text Search / Vector / TF-IDF):
-  Ranks runbooks purely by text similarity to symptom description and historical win rate.
+- Graph OFF (Keyword (TF-IDF) Baseline):
+  Ranks runbooks purely by text similarity to symptom description and historical win rate from static corpus.
   Selects R-7 ("Redis Cluster Memory Eviction & Cache Warm") due to high keyword match (94%)
   and top historical win rate (83.3%).
   CRITICAL FLAW: Blind to architectural changes! R-7 targets cache-a (decommissioned by ADR-17).
@@ -116,8 +116,8 @@ def run_baseline_comparison(query: str = "Redis cache memory saturation and high
     top_baseline = ranked_baseline[0]["runbook"]
     
     graph_off_result = {
-        "mode": "GRAPH_OFF_TEXT_SEARCH",
-        "algorithm": "TF-IDF + Historical Win Rate",
+        "mode": "GRAPH_OFF_KEYWORD_TFIDF",
+        "algorithm": "Keyword (TF-IDF) Baseline",
         "recommended_procedure": top_baseline["id"],
         "procedure_name": top_baseline["name"],
         "target_service": top_baseline["target_service"],

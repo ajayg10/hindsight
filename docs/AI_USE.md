@@ -61,7 +61,7 @@ Google Antigravity assisted with:
 Google Antigravity assisted with:
 - Implementing pure-Python TF-IDF comparison engine in `backend/app/baseline.py` demonstrating Graph OFF (keyword similarity recommending stale R-7) vs Graph ON (Hindsight policy refusing R-7 due to ADR-17 and executing R-12).
 - Implementing Time Scrubber API (`/api/timeline/as-of`) for interactive counterfactual switching between legacy Pre-ADR-17 (`checkout-api -> cache-a`) and current architecture.
-- Implementing counterfactual session fork creation via native FalkorDB `GRAPH.COPY` (`/api/fork/create`) with measured copy latency (< 70ms) and verified snapshot isolation.
+- Implementing counterfactual session fork creation via native FalkorDB `GRAPH.COPY` (`/api/fork/create`) with measured copy latency (< 70ms) and verified fork isolation (mutations in a fork do not affect the source, and vice versa).
 - Implementing Organizational Memory summary API (`/api/memory/summary`) across episodic, architectural, and social graph memories.
 - Implementing interactive Why Drawer in the frontend with syntax-highlighted Cypher, policy badge, and linked evidence subgraphs.
 - Building Graph OFF vs ON comparison modal and Organizational Memory Explorer modal in the frontend war room.

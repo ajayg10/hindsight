@@ -510,7 +510,7 @@ A FAIL is gate-compatible only when an exercised fallback is recorded.
 - [WCC](https://docs.falkordb.com/algorithms/wcc): config supports nodeLabels and relationshipTypes. Docs show both wcc and WCC; runtime decides.
 - [CDLP](https://docs.falkordb.com/algorithms/cdlp): `algo.labelPropagation(config)` yields communityId; it is not a WCC replacement.
 - [Path functions](https://docs.falkordb.com/cypher/functions#shortestpath): endpoints must be bound first; minimum length is 0 or 1.
-- [GRAPH.COPY](https://docs.falkordb.com/commands/graph.copy): documented source/destination copy; snapshot isolation is tested by mutation.
+- [GRAPH.COPY](https://docs.falkordb.com/commands/graph.copy): documented source/destination copy; verified that mutations in a fork do not affect the source, and vice versa.
 - [GRAPH.QUERY](https://docs.falkordb.com/commands/graph.query): no multi-statement guarantee relied upon.
 
 ## Key Findings & Engine Behaviors
