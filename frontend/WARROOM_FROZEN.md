@@ -202,3 +202,37 @@ This checklist documents every DOM hook, element ID, class name, data attribute,
 - `data-service` — Default service on `.intent-btn` ("cache-b" or "")
 - `data-fact-filter` — Fact filter on `.filter-chip` ("all", "current", "superseded")
 - `data-answer-id` — Stored on answer chips for `/api/explain/{answer_id}`
+
+---
+
+## 7. Relationship-Based & Index-Based DOM Lookup Audit
+- `closest`: **None**. `warroom-logic.ts` does not use `Element.closest()`.
+- `parentElement` / `parentNode`: **None**.
+- `children[i]` / `childNodes`: **None**.
+- `nextSibling` / `previousSibling`: **None**.
+- `querySelectorAll(...)[i]` / `:nth-child`: Used only for `.tab-btn` and `.tab-content` index synchronization during tab switching in the Memory Explorer modal.
+- `hidden` attribute: Toggled on `#baseline-banner`, `#diff-overlay-banner`, `#node-hud`, `#gate-action-box`, `#why-drawer`, `#baseline-modal`, `#memory-modal`, `#company-modal`, `#facts-modal`, `#runbooks-modal`, `#race-modal`.
+- `style.display`: **None**. All show/hide operations use `classList.add("hidden")` or `classList.remove("hidden")` or `.hidden` attribute.
+- `.war-room [hidden] { display: none !important; }` is enforced to prevent author CSS `display` overrides.
+
+---
+
+## 8. Layout Map (Zones A to D & CSS Repositioning)
+
+| Element / Selector | Zone | Description | CSS Technique (Zero JSX Moves) |
+|---|---|---|---|
+| `.brand` (`.back-link`, `.logo-mark`, `h1`, `.brand-tag`) | **Zone A** (Navbar Left) | Brand identity, back link to landing page, logo & subtitle | `display: flex; align-items: center; gap: 12px;` |
+| `.graph-toggle-wrap` (`#btn-graph-toggle`) | **Zone A** (Navbar Right) | Graph ON/OFF reasoning toggle switch | Repositioned into Zone A right cluster via grid/order placement |
+| `#btn-run-storm` (`#btn-run-text`) | **Zone A** (Navbar Right) | Primary incident storm simulation trigger | Repositioned into Zone A right cluster via grid/order placement |
+| `.track-badges` (`.track-pill` 01, 02, 03) | **Zone B** (Status Strip Left) | Connected Data, Memory & Coord, Company Brain pills | 28px pills in flex row with 8px gap on status strip row |
+| `.status-cluster` metric chips (`#db-status`, `#latency-chip`, `#graph-count-chip`, `#session-chip`) | **Zone B** (Status Strip Middle) | 4 equal-height (56px) metric tiles: Engine, Read Latency, Graph Counts, Session Fork | Grid tiles `repeat(4, minmax(0, 1fr))` with muted uppercase label and monospace tabular-nums |
+| `.actions` secondary controls (`#tenant-select`, `#timeline-scrubber`, `#pacing-mode`, `#btn-reset-graph`, `#btn-race`, modal triggers) | **Zone B** (Status Strip Right) | Scenario buttons, tenant select, time scrubber | Flex row with 8px gap; time scrubber `flex: 1 1 220px; max-width: 360px` |
+| `.viewport-panel .panel-header` | **Zone C** (Canvas Header) | Fixed 56px header with Instrument Serif single-line title | `display: flex; align-items: center; height: 56px; gap: 12px; padding: 0 20px;` |
+| `.crew-panel .panel-header` | **Zone C** (Crew Lanes Header) | Fixed 56px header sharing identical height and top y-position | Aligned to 56px height, single-line title, status chip `margin-left: auto;` |
+| `#cy` | **Zone C** (Topology Canvas) | Cytoscape interactive graph canvas container | `position: absolute; inset: 0;` filling panel body |
+| `.graph-legend` | **Zone C** (Canvas Floating Legend) | Status dots (Root Cause, Alerting, Blast Radius, Choke, Healthy) | `position: absolute; bottom: 16px; left: 16px; max-width: calc(100% - 32px); pointer-events: none;` |
+| `#diff-overlay-banner` | **Zone C** (Q7 Diff Overlay) | Architectural migration diff banner | `position: absolute; top: 12px; left: 12px; max-width: min(560px, calc(100% - 24px));` |
+| `.crew-lanes` | **Zone C** (Crew Lanes Scrollable List) | Internal scroll container for crew agent cards | `flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;` |
+| `.crew-card` | **Zone C** (Crew Cards) | Sentinel, Investigator A/B, Conflict, Responder, Concierge, Librarian | 2-row grid/flex layout: `[icon] [name] [status/kill actions]` row 1, `[description full width]` row 2 |
+| `.bottom-terminal` | **Zone D** (Event Stream Dock) | Real-time SSE event log dock | Fixed height `clamp(150px, 20vh, 240px);` with 44px header and monospace body |
+
