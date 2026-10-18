@@ -1,21 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Instrument_Serif } from "next/font/google";
 import { REPO_URL } from "@/lib/site";
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
-
-const instrumentSerif = Instrument_Serif({
-  weight: "400",
-  style: ["normal", "italic"],
-  subsets: ["latin"],
-  variable: "--font-instrument",
-  display: "swap",
-});
+const inter = { variable: "font-sans" };
+const instrumentSerif = { variable: "font-serif" };
 
 export const viewport: Viewport = {
   themeColor: "#000000",

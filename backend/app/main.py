@@ -1186,12 +1186,13 @@ def call_public_mcp_tool(request: Request, payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=f"Tool '{tool_name}' not permitted on public read-only endpoint.")
 
 # Serve static frontend files
-STATIC_DIR = FRONTEND_DIR / "out" if (FRONTEND_DIR / "out").exists() else FRONTEND_DIR
+OUT_DIR = FRONTEND_DIR / "out"
+LEGACY_DIR = FRONTEND_DIR / "legacy"
 
-if STATIC_DIR.exists():
+if OUT_DIR.exists():
     @app.get("/")
     def serve_index():
-        index_file = STATIC_DIR / "index.html"
+        index_file = OUT_DIR / "index.html"
         if index_file.exists():
             return FileResponse(index_file)
         return HTMLResponse("<h1>Hindsight Frontend Loading...</h1>")
@@ -1199,30 +1200,50 @@ if STATIC_DIR.exists():
     @app.get("/app")
     @app.get("/app/")
     def serve_app():
-        app_file = STATIC_DIR / "app" / "index.html"
+        app_file = OUT_DIR / "app" / "index.html"
         if app_file.exists():
             return FileResponse(app_file)
         return HTMLResponse("<h1>Hindsight War Room Loading...</h1>")
 
     @app.get("/icon.png")
     def serve_icon():
-        icon_file = STATIC_DIR / "icon.png"
+        icon_file = OUT_DIR / "icon.png"
         if icon_file.exists():
             return FileResponse(icon_file)
         raise HTTPException(status_code=404, detail="Icon not found")
 
-    next_dir = STATIC_DIR / "_next"
+    next_dir = OUT_DIR / "_next"
     if next_dir.exists():
         app.mount("/_next", StaticFiles(directory=str(next_dir)), name="next_static")
 
-    images_dir = STATIC_DIR / "images"
+    images_dir = OUT_DIR / "images"
     if images_dir.exists():
         app.mount("/images", StaticFiles(directory=str(images_dir)), name="images_static")
 
-    videos_dir = STATIC_DIR / "videos"
+    videos_dir = OUT_DIR / "videos"
     if videos_dir.exists():
         app.mount("/videos", StaticFiles(directory=str(videos_dir)), name="videos_static")
 
-    # Legacy static directory fallback
-    if FRONTEND_DIR.exists():
-        app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+    if LEGACY_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(LEGACY_DIR)), name="static")
+
+elif LEGACY_DIR.exists():
+    @app.get("/")
+    @app.get("/app")
+    @app.get("/app/")
+    def serve_legacy_index():
+        legacy_file = LEGACY_DIR / "index.html"
+        if legacy_file.exists():
+            return FileResponse(legacy_file)
+        return HTMLResponse("<h1>Hindsight War Room Loading...</h1>")
+
+    app.mount("/static", StaticFiles(directory=str(LEGACY_DIR)), name="static")
+elif FRONTEND_DIR.exists():
+    @app.get("/")
+    def serve_fallback_index():
+        index_file = FRONTEND_DIR / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return HTMLResponse("<h1>Hindsight War Room Loading...</h1>")
+
+    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
