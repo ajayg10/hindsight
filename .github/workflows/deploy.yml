@@ -1,0 +1,26 @@
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to AWS Lightsail
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and Deploy to Lightsail
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST || '43.204.29.169' }}
+          username: 'ubuntu'
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            cd ~/hindsight
+            git pull origin main
+            sudo docker compose up -d --build
+            sudo docker compose exec web python seed/gen.py
+            sudo docker compose exec web python seed/tenants.py
