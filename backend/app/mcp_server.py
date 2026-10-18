@@ -767,13 +767,18 @@ class HindsightToolRegistry:
         ep_id = f"action-{uuid.uuid4().hex[:6]}"
         g.query("""
         MATCH (p:Procedure {id:$pid})
+        OPTIONAL MATCH (p)-[:HAS_STEP]->(:Step)-[:TARGETS]->(s:Service)
         CREATE (e:Episode {
             id: $eid,
             kind: 'action',
+            procedure: $pid,
             outcome: 'success',
             operator: $op,
             executed_at: $now
         })-[:USED]->(p)
+        FOREACH (_ IN CASE WHEN s IS NOT NULL THEN [1] ELSE [] END |
+            CREATE (e)-[:INVOLVED]->(s)
+        )
         """, {
             "pid": procedure_id,
             "eid": ep_id,

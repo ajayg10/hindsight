@@ -15,25 +15,133 @@ let evtSource = null;
 let activeTenant = "parcelo";
 let currentSessionId = typeof window !== "undefined" ? sessionStorage.getItem("hindsight_session_id") : null;
 let isGraphOn = true;
+let lastCompanyAnswerId = null;
 
-async function ensureSession(tenant = "parcelo") {
-  if (!currentSessionId) {
-    try {
-      const res = await fetch(`/api/session?tenant=${tenant}`, { method: "POST" });
-      const data = await res.json();
-      currentSessionId = data.session_id;
-      sessionStorage.setItem("hindsight_session_id", currentSessionId);
-    } catch (e) {
-      currentSessionId = "sess_" + Math.random().toString(36).substring(2, 10);
-    }
-  }
+function updateSessionChip(sid) {
   const chip = document.getElementById("session-chip");
-  if (chip) chip.textContent = `${currentSessionId.slice(0, 10)}... (fork)`;
+  if (!chip) return;
+  if (sid) {
+    chip.textContent = `${sid.slice(0, 10)}... (fork)`;
+    chip.style.borderColor = "";
+    chip.style.color = "";
+    chip.title = `Visitor isolated copy-on-write fork (${sid}) created via FalkorDB GRAPH.COPY`;
+  } else {
+    chip.textContent = "No Session";
+  }
+}
+
+function showSessionError(msg) {
+  const chip = document.getElementById("session-chip");
+  if (chip) {
+    chip.textContent = "Fork Failed";
+    chip.style.borderColor = "#ef4444";
+    chip.style.color = "#f87171";
+    chip.title = msg;
+  }
+  const feed = document.getElementById("terminal-feed");
+  if (feed) {
+    const errDiv = document.createElement("div");
+    errDiv.className = "term-entry";
+    errDiv.innerHTML = `<span class="t-stamp">[ERROR]</span> <span style="color:#ef4444;font-weight:600;">Session fork failure:</span> <span style="color:#fca5a5;">${msg}</span>`;
+    feed.prepend(errDiv);
+  }
+}
+
+function clearObsoleteAnswers() {
+  lastCompanyAnswerId = null;
+
+  // Reset Why Drawer
+  const whyTitle = document.getElementById("why-title");
+  if (whyTitle) whyTitle.textContent = "Provenance: None";
+  const whyTool = document.getElementById("why-tool");
+  if (whyTool) whyTool.textContent = "Tool: --";
+  const whyPolicy = document.getElementById("why-policy");
+  if (whyPolicy) whyPolicy.textContent = "Policy: --";
+  const whySummary = document.getElementById("why-summary");
+  if (whySummary) whySummary.textContent = "Awaiting storm execution to record traceable Answer nodes in FalkorDB.";
+  const whyCypherName = document.getElementById("why-cypher-name");
+  if (whyCypherName) whyCypherName.textContent = "Cypher Query";
+  const whyCypherCode = document.getElementById("why-cypher-code");
+  if (whyCypherCode) whyCypherCode.textContent = "// Run the storm first to produce answers and evidence";
+  const evContainer = document.getElementById("why-evidence-list");
+  if (evContainer) evContainer.innerHTML = '<span class="empty-state">No direct evidence nodes linked.</span>';
+
+  // Reset Company Answer Card
+  const compResult = document.getElementById("company-result-card");
+  if (compResult) compResult.classList.add("hidden");
+
+  // Reset Episodic Memory panel
+  const epList = document.getElementById("mem-episodic-list");
+  if (epList) epList.innerHTML = '<div class="mem-item">No incident action episodes recorded yet. Run the storm to populate.</div>';
+}
+
+async function ensureSession(tenant = "parcelo", forceNew = false) {
+  if (forceNew) {
+    currentSessionId = null;
+    if (typeof window !== "undefined") sessionStorage.removeItem("hindsight_session_id");
+  }
+
+  try {
+    const querySid = currentSessionId ? `&session_id=${encodeURIComponent(currentSessionId)}` : "";
+    const res = await fetch(`/api/session?tenant=${encodeURIComponent(tenant)}${querySid}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(currentSessionId ? { "X-Session-ID": currentSessionId } : {})
+      },
+      body: JSON.stringify({ tenant, session_id: currentSessionId })
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      const msg = errJson.detail || `Session fork failed with status ${res.status}`;
+      showSessionError(msg);
+      throw new Error(msg);
+    }
+
+    const data = await res.json();
+    if (data.session_id) {
+      currentSessionId = data.session_id;
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("hindsight_session_id", currentSessionId);
+      }
+    }
+  } catch (e) {
+    console.error("Failed to fork session graph:", e);
+    showSessionError(e.message);
+    throw e;
+  }
+
+  updateSessionChip(currentSessionId);
   return currentSessionId;
 }
 
-function sessionFetch(url, options = {}) {
+async function sessionFetch(url, options = {}) {
   options.headers = options.headers || {};
+
+  let finalUrl = url;
+  try {
+    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost:8000";
+    const parsed = new URL(url, base);
+    if (currentSessionId && !parsed.searchParams.has("session_id")) {
+      parsed.searchParams.set("session_id", currentSessionId);
+    }
+    if (activeTenant && !parsed.searchParams.has("tenant")) {
+      parsed.searchParams.set("tenant", activeTenant);
+    }
+    finalUrl = parsed.pathname + parsed.search;
+  } catch (_) {
+    const delim = url.includes("?") ? "&" : "?";
+    let extra = "";
+    if (currentSessionId && !url.includes("session_id=")) {
+      extra += `session_id=${encodeURIComponent(currentSessionId)}`;
+    }
+    if (activeTenant && !url.includes("tenant=")) {
+      extra += `${extra ? "&" : ""}tenant=${encodeURIComponent(activeTenant)}`;
+    }
+    if (extra) finalUrl = `${url}${delim}${extra}`;
+  }
+
   if (currentSessionId) {
     if (options.headers instanceof Headers) {
       options.headers.set("X-Session-ID", currentSessionId);
@@ -41,7 +149,32 @@ function sessionFetch(url, options = {}) {
       options.headers["X-Session-ID"] = currentSessionId;
     }
   }
-  return fetch(url, options);
+  if (activeTenant) {
+    if (options.headers instanceof Headers) {
+      options.headers.set("X-Tenant", activeTenant);
+    } else {
+      options.headers["X-Tenant"] = activeTenant;
+    }
+  }
+
+  const res = await fetch(finalUrl, options);
+
+  const respSid = res.headers.get("X-Session-ID");
+  const replaced = res.headers.get("X-Session-Replaced") === "true";
+  if (respSid && respSid !== currentSessionId) {
+    console.warn("Session ID updated from response header:", respSid, replaced ? "(replaced)" : "");
+    currentSessionId = respSid;
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("hindsight_session_id", currentSessionId);
+    }
+    updateSessionChip(currentSessionId);
+    if (replaced) {
+      initEventStream();
+      clearObsoleteAnswers();
+    }
+  }
+
+  return res;
 }
 
 let statsInterval: any = null;
@@ -301,7 +434,7 @@ async function initCytoscape(tenant = "parcelo") {
 
 async function loadTenantGraph(tenant) {
   try {
-    const res = await fetch(`/api/graph?tenant=${tenant}`);
+    const res = await sessionFetch(`/api/graph?tenant=${tenant}`);
     const data = await res.json();
     if (cy && data.elements) {
       cy.elements().remove();
@@ -314,7 +447,7 @@ async function loadTenantGraph(tenant) {
         padding: 30
       }).run();
       const nodeCountEl = document.getElementById("topo-node-count");
-      if (nodeCountEl) nodeCountEl.textContent = `${data.elements.nodes.length} Services • t:${tenant}`;
+      if (nodeCountEl) nodeCountEl.textContent = `${data.elements.nodes.length} Services • ${data.target_graph || ('t:' + tenant)}`;
     }
   } catch (err) {
     console.error("Failed to load tenant graph:", err);
@@ -349,10 +482,15 @@ function setupHudClose() {
 // -------------------------------------------------------------
 function initEventStream() {
   if (evtSource) {
-    evtSource.close();
+    try {
+      evtSource.close();
+    } catch (_) {}
+    evtSource = null;
   }
 
-  const streamUrl = currentSessionId ? `/api/events?session_id=${encodeURIComponent(currentSessionId)}` : "/api/events";
+  const streamUrl = currentSessionId 
+    ? `/api/events?session_id=${encodeURIComponent(currentSessionId)}&tenant=${encodeURIComponent(activeTenant)}` 
+    : `/api/events?tenant=${encodeURIComponent(activeTenant)}`;
   evtSource = new EventSource(streamUrl);
 
   evtSource.onmessage = (e) => {
@@ -370,13 +508,23 @@ function initEventStream() {
     "approval_required",
     "action_executed",
     "doc_task_opened",
-    "answer"
+    "answer",
+    "session_replaced"
   ];
 
   eventTypes.forEach(type => {
     evtSource.addEventListener(type, (e) => {
       try {
         const ev = JSON.parse(e.data);
+        if (type === "session_replaced" && ev.session_id) {
+          currentSessionId = ev.session_id;
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem("hindsight_session_id", currentSessionId);
+          }
+          updateSessionChip(currentSessionId);
+          clearObsoleteAnswers();
+          return;
+        }
         handleStreamEvent(ev);
       } catch (err) {
         console.error("Failed to parse event:", err);
@@ -676,12 +824,19 @@ function initControls() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tenant: activeTenant, session_id: currentSessionId })
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `Reset failed with HTTP ${res.status}`);
+        }
         const data = await res.json();
         console.log("Visitor fork reset:", data);
+        clearObsoleteAnswers();
+        initEventStream();
         await initCytoscape(activeTenant);
         await updateLiveStats(activeTenant);
       } catch (err) {
         console.error("Failed to reset fork:", err);
+        showSessionError(err.message);
       }
     });
   }
@@ -703,6 +858,13 @@ function initControls() {
   if (tenantSelect) {
     tenantSelect.addEventListener("change", async (e) => {
       activeTenant = e.target.value;
+      try {
+        await ensureSession(activeTenant, true);
+      } catch (err) {
+        console.error("Failed to switch session for new tenant:", err);
+      }
+      initEventStream();
+      clearObsoleteAnswers();
       await loadTenantGraph(activeTenant);
       await updateLiveStats(activeTenant);
     });
@@ -766,7 +928,7 @@ function initControls() {
       document.getElementById("race-lost").textContent = "--";
       document.getElementById("race-time").textContent = "-- ms";
       try {
-        const res = await fetch("/api/race?workers=32&tasks=8", { method: "POST" });
+        const res = await sessionFetch("/api/race?workers=32&tasks=8", { method: "POST" });
         const data = await res.json();
         document.getElementById("race-won").textContent = data.claims_won;
         document.getElementById("race-lost").textContent = data.lost_attempts;
@@ -810,7 +972,7 @@ function initControls() {
       `;
     }
     try {
-      const res = await fetch(`/api/agent/kill?agent_id=${agentId}&task_id=${taskId}`, { method: "POST" });
+      const res = await sessionFetch(`/api/agent/kill?agent_id=${agentId}&task_id=${taskId}`, { method: "POST" });
       const data = await res.json();
       appendTerminalEntry({
         event_type: "agent_killed",
@@ -865,10 +1027,10 @@ function initControls() {
 
       try {
         targetBtn.style.opacity = "0.5";
-        const res = await fetch("/api/company/query", {
+        const res = await sessionFetch("/api/company/query", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ intent, service_id: svc, tenant: activeTenant })
+          body: JSON.stringify({ intent, service_id: svc, tenant: activeTenant, session_id: currentSessionId })
         });
         const data = await res.json();
         lastCompanyAnswerId = data.answer_id;
@@ -950,7 +1112,7 @@ function initControls() {
     if (!listEl) return;
     listEl.innerHTML = `<div class="mem-item loading">Loading fact ledger from FalkorDB...</div>`;
     try {
-      const res = await fetch(`/api/facts?tenant=${activeTenant}`);
+      const res = await sessionFetch(`/api/facts?tenant=${activeTenant}`);
       const data = await res.json();
       allFactsCache = data.facts || [];
       renderFactsList(filter);
@@ -1016,7 +1178,7 @@ function initControls() {
     if (!gridEl) return;
     gridEl.innerHTML = `<div class="mem-item loading">Loading runbooks from FalkorDB...</div>`;
     try {
-      const res = await fetch(`/api/runbooks?tenant=${activeTenant}`);
+      const res = await sessionFetch(`/api/runbooks?tenant=${activeTenant}`);
       const data = await res.json();
       gridEl.innerHTML = "";
       (data.runbooks || []).forEach(rb => {
@@ -1140,7 +1302,7 @@ function initControls() {
     btnFork.addEventListener("click", async () => {
       btnFork.style.opacity = "0.5";
       try {
-        const res = await fetch("/api/fork/create", { method: "POST" });
+        const res = await sessionFetch("/api/fork/create", { method: "POST" });
         const data = await res.json();
         appendTerminalEntry({
           event_type: "counterfactual_fork_created",
@@ -1215,8 +1377,11 @@ async function loadWhyDrawer(answerId = "latest") {
   whyDrawer.classList.remove("hidden");
 
   try {
-    const res = await fetch(`/api/explain/${answerId}`);
-    if (!res.ok) throw new Error("Explain query failed");
+    const res = await sessionFetch(`/api/explain/${answerId}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Explain query failed with HTTP ${res.status}`);
+    }
     const data = await res.json();
 
     document.getElementById("why-title").textContent = `Provenance: ${data.answer_id}`;
@@ -1242,8 +1407,14 @@ async function loadWhyDrawer(answerId = "latest") {
       evContainer.innerHTML = `<span class="empty-state">No direct evidence nodes linked.</span>`;
     }
   } catch (err) {
-    document.getElementById("why-summary").textContent = "Awaiting storm execution to record traceable Answer nodes in FalkorDB.";
-    document.getElementById("why-cypher-code").textContent = "// Run the storm first to produce answers and evidence";
+    document.getElementById("why-title").textContent = `Provenance: ${answerId}`;
+    document.getElementById("why-tool").textContent = "Tool: --";
+    document.getElementById("why-policy").textContent = "Policy: --";
+    document.getElementById("why-summary").textContent = err.message || "Awaiting storm execution to record traceable Answer nodes in FalkorDB.";
+    document.getElementById("why-cypher-name").textContent = "Cypher Query";
+    document.getElementById("why-cypher-code").textContent = "// " + (err.message || "Run the storm first to produce answers and evidence");
+    const evContainer = document.getElementById("why-evidence-list");
+    if (evContainer) evContainer.innerHTML = `<span class="empty-state">${err.message || "No evidence recorded yet."}</span>`;
   }
 }
 
@@ -1253,7 +1424,7 @@ async function loadWhyDrawer(answerId = "latest") {
 async function loadBaselineComparison(query = "") {
   try {
     const url = query ? `/api/baseline/compare?query=${encodeURIComponent(query)}` : "/api/baseline/compare";
-    const res = await fetch(url);
+    const res = await sessionFetch(url);
     const data = await res.json();
 
     // Graph OFF
@@ -1279,13 +1450,16 @@ async function loadBaselineComparison(query = "") {
 // -------------------------------------------------------------
 async function loadMemorySummary() {
   try {
-    const res = await fetch("/api/memory/summary");
+    const res = await sessionFetch("/api/memory/summary");
+    if (!res.ok) {
+      throw new Error(`Failed to load memory summary: HTTP ${res.status}`);
+    }
     const data = await res.json();
 
     // 1. Episodic
     const epList = document.getElementById("mem-episodic-list");
     epList.innerHTML = "";
-    if (data.episodic_memory.recorded_actions.length > 0) {
+    if (data.episodic_memory && data.episodic_memory.recorded_actions && data.episodic_memory.recorded_actions.length > 0) {
       data.episodic_memory.recorded_actions.forEach(a => {
         const item = document.createElement("div");
         item.className = "mem-item";
@@ -1344,7 +1518,7 @@ async function loadMemorySummary() {
 // -------------------------------------------------------------
 async function loadTimelineState(state) {
   try {
-    const res = await fetch(`/api/timeline/as-of?state=${state}&tenant=${activeTenant}`);
+    const res = await sessionFetch(`/api/timeline/as-of?state=${state}&tenant=${activeTenant}`);
     const data = await res.json();
     if (cy && data.elements) {
       cy.elements().remove();
@@ -1376,7 +1550,7 @@ async function loadTimelineState(state) {
 // -------------------------------------------------------------
 async function applyQ7DiffOverlay() {
   try {
-    const res = await fetch(`/api/timeline/diff?tenant=${activeTenant}`);
+    const res = await sessionFetch(`/api/timeline/diff?tenant=${activeTenant}`);
     const diff = await res.json();
 
     // Baseline current

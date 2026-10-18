@@ -54,16 +54,18 @@ services:
     environment:
       FALKORDB_HOST: falkordb
       FALKORDB_PORT: 6379
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ./backend:/work/backend
       - ./seed:/work/seed
       - ./scripts:/work/scripts
       - ./docs:/work/docs
+      - ./frontend/out:/work/frontend/out
     networks: [graph]
     depends_on:
       falkordb:
         condition: service_healthy
-    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "backend"]
 networks:
   graph:
 volumes:

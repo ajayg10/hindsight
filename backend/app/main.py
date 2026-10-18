@@ -13,6 +13,7 @@ import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import time
@@ -25,6 +26,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
+
+logger = logging.getLogger("hindsight")
 
 from .clock import CoordinationClock, DemoClock
 from .events import EventBus, Event, global_bus
@@ -51,7 +54,20 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Session-ID", "X-Session-Replaced", "X-Tenant"],
 )
+
+@app.middleware("http")
+async def session_context_middleware(request: Request, call_next):
+    request.state.session_id = None
+    request.state.session_replaced = False
+    response = await call_next(request)
+    sess_id = getattr(request.state, "session_id", None)
+    if sess_id:
+        response.headers["X-Session-ID"] = sess_id
+    if getattr(request.state, "session_replaced", False):
+        response.headers["X-Session-Replaced"] = "true"
+    return response
 
 # Per-IP rate limiting: maximum 120 requests per minute
 CLIENT_REQUEST_LOG: Dict[str, List[float]] = {}
@@ -103,7 +119,7 @@ def get_or_create_session(session_id: Optional[str] = None, tenant: str = "parce
 
     if session_id and session_id in ACTIVE_SESSIONS:
         sess = ACTIVE_SESSIONS[session_id]
-        if sess["tenant"] == tenant:
+        if sess.get("tenant") == tenant:
             sess["last_active"] = time.time()
             return sess
 
@@ -118,7 +134,11 @@ def get_or_create_session(session_id: Optional[str] = None, tenant: str = "parce
             pass
         db.connection.execute_command("GRAPH.COPY", source_graph, target_graph)
     except Exception as e:
-        pass
+        logger.error(f"GRAPH.COPY failed from source graph '{source_graph}' to '{target_graph}': {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"GRAPH.COPY failed from source graph '{source_graph}' to '{target_graph}': {str(e)}"
+        )
     copy_ms = round((time.perf_counter() - t0) * 1000, 2)
 
     now = time.time()
@@ -143,13 +163,82 @@ def get_or_create_session(session_id: Optional[str] = None, tenant: str = "parce
     ACTIVE_SESSIONS[sid] = sess_data
     return sess_data
 
-def resolve_target_graph(request: Request, tenant: str = "parcelo") -> str:
-    """Resolves target graph: visitor fork s:{session_id} if session header is present, else t:{tenant}."""
-    sid = request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+def resolve_session_context(
+    request: Request,
+    tenant: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    require_session: bool = False
+) -> Dict[str, Any]:
+    """
+    Unified context resolver for the caller's visitor session and tenant.
+    Never falls back to another visitor's graph or silently reads a golden graph when a visitor session was supplied.
+    If session is missing or expired, explicitly creates a fresh replacement session fork and flags it in request.state.
+    """
+    # 1. Resolve tenant
+    req_tenant = None
+    if payload and isinstance(payload, dict):
+        req_tenant = payload.get("tenant")
+    if not req_tenant:
+        req_tenant = request.headers.get("X-Tenant") or request.query_params.get("tenant")
+    if not req_tenant:
+        req_tenant = tenant or "parcelo"
+    req_tenant = str(req_tenant).strip().lower()
+
+    # 2. Resolve session ID
+    sid = None
+    if payload and isinstance(payload, dict):
+        sid = payload.get("session_id")
+    if not sid:
+        sid = request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    if sid and str(sid).strip().lower() in ("null", "undefined", "", "none"):
+        sid = None
     if sid:
-        sess = get_or_create_session(session_id=sid, tenant=tenant)
-        return sess["target_graph"]
-    return f"t:{tenant}"
+        sid = str(sid).strip()
+
+    now = time.time()
+
+    # 3. If a session ID was supplied
+    if sid:
+        if sid in ACTIVE_SESSIONS:
+            sess = ACTIVE_SESSIONS[sid]
+            if sess.get("tenant") == req_tenant and (now - sess.get("last_active", 0) <= SESSION_TTL_SECONDS):
+                sess["last_active"] = now
+                request.state.session_id = sid
+                request.state.session_replaced = False
+                return sess
+
+        # Missing or expired session -> Create replacement session
+        new_sess = get_or_create_session(session_id=None, tenant=req_tenant)
+        request.state.session_id = new_sess["session_id"]
+        request.state.session_replaced = True
+        logger.info(f"Replaced missing/expired session '{sid}' with fresh session '{new_sess['session_id']}' for tenant '{req_tenant}'")
+        return new_sess
+
+    # 4. No session ID supplied
+    if require_session:
+        new_sess = get_or_create_session(session_id=None, tenant=req_tenant)
+        request.state.session_id = new_sess["session_id"]
+        request.state.session_replaced = False
+        return new_sess
+
+    # Pure read-only request without session context
+    request.state.session_id = None
+    request.state.session_replaced = False
+    return {
+        "session_id": None,
+        "tenant": req_tenant,
+        "source_graph": f"t:{req_tenant}",
+        "target_graph": f"t:{req_tenant}",
+        "created_at": now,
+        "last_active": now,
+        "copy_duration_ms": 0.0,
+        "event_bus": global_bus,
+        "storm_state": storm_state
+    }
+
+def resolve_target_graph(request: Request, tenant: str = "parcelo") -> str:
+    ctx = resolve_session_context(request, tenant=tenant)
+    return ctx["target_graph"]
 
 @app.on_event("startup")
 async def start_background_cleaner():
@@ -241,7 +330,14 @@ def reset_session_endpoint(request: Request, payload: Optional[Dict[str, Any]] =
         db.select_graph(sess["target_graph"]).delete()
     except Exception:
         pass
-    db.connection.execute_command("GRAPH.COPY", sess["source_graph"], sess["target_graph"])
+    try:
+        db.connection.execute_command("GRAPH.COPY", sess["source_graph"], sess["target_graph"])
+    except Exception as e:
+        logger.error(f"GRAPH.COPY reset failed from '{sess['source_graph']}' to '{sess['target_graph']}': {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"GRAPH.COPY failed while resetting '{sess['target_graph']}' from '{sess['source_graph']}': {str(e)}"
+        )
     copy_ms = round((time.perf_counter() - t0) * 1000, 2)
 
     # Reset visitor fork event stream and workflow state
@@ -256,6 +352,8 @@ def reset_session_endpoint(request: Request, payload: Optional[Dict[str, Any]] =
             "approval_received": asyncio.Event(),
             "last_result": None
         }
+
+    request.state.session_id = sess["session_id"]
 
     return {
         "status": "reset",
@@ -281,7 +379,8 @@ def get_tenants():
 def get_graph_stats(request: Request, tenant: str = "parcelo"):
     """Returns live graph counts (nodes, edges) and measured read latency (p50, p95)."""
     db = get_db()
-    target_g = resolve_target_graph(request, tenant)
+    ctx = resolve_session_context(request, tenant=tenant)
+    target_g = ctx["target_graph"]
     g = db.select_graph(target_g)
     
     samples = []
@@ -302,7 +401,9 @@ def get_graph_stats(request: Request, tenant: str = "parcelo"):
     service_count = int(service_res[0][0]) if service_res else 0
 
     return {
-        "tenant": tenant,
+        "tenant": ctx["tenant"],
+        "session_id": ctx["session_id"],
+        "target_graph": target_g,
         "nodes": node_count,
         "edges": edge_count,
         "services": service_count,
@@ -325,14 +426,15 @@ def get_baseline_comparison(query: Optional[str] = None):
     return run_baseline_comparison(q)
 
 @app.get("/api/timeline/as-of")
-def get_timeline_as_of(state: str = "current", tenant: str = "parcelo"):
+def get_timeline_as_of(request: Request, state: str = "current", tenant: str = "parcelo"):
     """
     Returns topology snapshot for Time Scrubber:
     - 'pre-adr-17': Topology before ADR-17 (checkout-api -> cache-a, cache-b offline)
     - 'current': Topology after ADR-17 (checkout-api -> cache-b, cache-a retired)
     """
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
+    ctx = resolve_session_context(request, tenant=tenant)
+    g = db.select_graph(ctx["target_graph"])
 
     service_query = """
     MATCH (s:Service)
@@ -413,12 +515,13 @@ def get_timeline_as_of(state: str = "current", tenant: str = "parcelo"):
     }
 
 @app.get("/api/timeline/diff")
-def get_timeline_diff(tenant: str = "parcelo"):
+def get_timeline_diff(request: Request, tenant: str = "parcelo"):
     """
     Returns Q7 architectural diff overlay (green additions, red removals).
     """
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
+    ctx = resolve_session_context(request, tenant=tenant)
+    g = db.select_graph(ctx["target_graph"])
     clock = DemoClock.frozen()
     adr_time = clock.adr17_ms
 
@@ -524,7 +627,7 @@ def kill_agent_and_reclaim(request: Request, agent_id: str = "inv-b-centrality",
     }
 
 @app.post("/api/company/query")
-def company_query(payload: Dict[str, Any]):
+def company_query(request: Request, payload: Optional[Dict[str, Any]] = None):
     """
     Executes Company Brain questions (Track 03) mapped directly to MCP tools:
     - who_owns
@@ -532,25 +635,32 @@ def company_query(payload: Dict[str, Any]):
     - trace_decision
     - staleness_audit
     """
+    payload = payload or {}
     intent = payload.get("intent", "who_owns")
     service_id = payload.get("service_id", "cache-b")
     tenant = payload.get("tenant", "parcelo")
+    ctx = resolve_session_context(request, tenant=tenant, payload=payload)
+    target_g = ctx["target_graph"]
     db = get_db()
-    tools = HindsightToolRegistry(db, default_graph=f"t:{tenant}", event_bus=global_bus)
+    tools = HindsightToolRegistry(db, default_graph=target_g, event_bus=ctx["event_bus"])
 
     if intent == "who_owns":
-        return tools.who_owns(service_id=service_id)
+        res = tools.who_owns(service_id=service_id)
     elif intent == "who_knows":
-        return tools.who_knows(service_id=service_id)
+        res = tools.who_knows(service_id=service_id)
     elif intent == "trace_decision":
-        return tools.trace_decision(service_id=service_id)
+        res = tools.trace_decision(service_id=service_id)
     elif intent == "staleness_audit":
-        return tools.staleness_audit()
+        res = tools.staleness_audit()
     else:
         raise HTTPException(status_code=400, detail=f"Unknown intent: {intent}")
 
+    if ctx["session_id"] and isinstance(res, dict):
+        res["session_id"] = ctx["session_id"]
+    return res
+
 @app.get("/api/facts")
-def get_facts_ledger(tenant: str = "parcelo"):
+def get_facts_ledger(request: Request, tenant: str = "parcelo"):
     """
     Returns temporal fact ledger with current and superseded facts.
     All timestamps and validity dates are strictly derived from DemoClock.
@@ -562,8 +672,9 @@ def get_facts_ledger(tenant: str = "parcelo"):
     month_ago_ms = now_ms - (30 * 24 * 3600 * 1000)
 
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
-    
+    ctx = resolve_session_context(request, tenant=tenant)
+    g = db.select_graph(ctx["target_graph"])
+
     rows = g.query("""
     MATCH (f:Fact)
     OPTIONAL MATCH (f)-[s:SUPERSEDES]->(old:Fact)
@@ -636,12 +747,13 @@ def get_facts_ledger(tenant: str = "parcelo"):
     }
 
 @app.get("/api/runbooks")
-def get_runbooks(tenant: str = "parcelo"):
+def get_runbooks(request: Request, tenant: str = "parcelo"):
     """
     Returns runbook procedures with historical win rates, targets, and ADR invalidation status (STALE stamps).
     """
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
+    ctx = resolve_session_context(request, tenant=tenant)
+    g = db.select_graph(ctx["target_graph"])
 
     query = """
     MATCH (p:Procedure)-[:HAS_STEP]->(st:Step)-[:TARGETS]->(s:Service)
@@ -744,15 +856,17 @@ def create_counterfactual_fork(source_tenant: str = "parcelo", fork_id: Optional
     }
 
 @app.get("/api/memory/summary")
-def get_memory_summary(tenant: str = "parcelo"):
+def get_memory_summary(request: Request, tenant: str = "parcelo"):
     """
     Returns organizational memory summary across:
     1. Episodic Memory (Incidents, actions, operator gates)
     2. Architectural Memory (ADRs, invalidated procedures, staleness tasks)
     3. Social / Expertise Memory (Teams, routing scores, active status)
     """
+    ctx = resolve_session_context(request, tenant=tenant)
+    target_g = ctx["target_graph"]
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
+    g = db.select_graph(target_g)
 
     incidents = []
     try:
@@ -764,11 +878,38 @@ def get_memory_summary(tenant: str = "parcelo"):
 
     actions = []
     try:
-        act_rows = g.query("MATCH (a:Action) RETURN a.id, a.procedure, a.target, a.approved_by, a.created_at ORDER BY a.created_at DESC LIMIT 5").result_set
+        act_rows = g.query("""
+        MATCH (e:Episode {kind:'action'})
+        OPTIONAL MATCH (e)-[:USED]->(p:Procedure)
+        OPTIONAL MATCH (e)-[:INVOLVED]->(s:Service)
+        OPTIONAL MATCH (p)-[:HAS_STEP]->(:Step)-[:TARGETS]->(s2:Service)
+        RETURN e.id,
+               coalesce(p.id, e.procedure, 'R-12'),
+               coalesce(s.id, s2.id, e.target, 'cache-b'),
+               coalesce(e.operator, 'autonomous'),
+               coalesce(e.executed_at, 0),
+               coalesce(e.outcome, 'success')
+        ORDER BY e.executed_at DESC LIMIT 5
+        """).result_set
         for r in act_rows:
-            actions.append({"id": r[0], "procedure": r[1], "target": r[2], "approved_by": r[3], "created_at": r[4]})
-    except Exception:
-        pass
+            actions.append({
+                "id": r[0],
+                "procedure": r[1],
+                "target": r[2],
+                "approved_by": r[3],
+                "created_at": r[4],
+                "outcome": r[5]
+            })
+    except Exception as e:
+        logger.error(f"Error querying action episodes: {e}")
+
+    if not actions:
+        try:
+            old_rows = g.query("MATCH (a:Action) RETURN a.id, a.procedure, a.target, a.approved_by, a.created_at ORDER BY a.created_at DESC LIMIT 5").result_set
+            for r in old_rows:
+                actions.append({"id": r[0], "procedure": r[1], "target": r[2], "approved_by": r[3], "created_at": r[4], "outcome": "success"})
+        except Exception:
+            pass
 
     adrs = []
     try:
@@ -823,6 +964,9 @@ def get_memory_summary(tenant: str = "parcelo"):
         pass
 
     return {
+        "tenant": ctx["tenant"],
+        "session_id": ctx["session_id"],
+        "target_graph": target_g,
         "episodic_memory": {
             "recent_incidents": incidents,
             "recorded_actions": actions,
@@ -840,9 +984,11 @@ def get_memory_summary(tenant: str = "parcelo"):
     }
 
 @app.get("/api/explain/{answer_id}")
-def explain_answer(answer_id: str, tenant: str = "parcelo"):
+def explain_answer(request: Request, answer_id: str, tenant: str = "parcelo"):
+    ctx = resolve_session_context(request, tenant=tenant)
+    target_g = ctx["target_graph"]
     db = get_db()
-    g = db.select_graph(f"t:{tenant}")
+    g = db.select_graph(target_g)
 
     target_id = answer_id
     if target_id in ("latest", "last"):
@@ -850,9 +996,9 @@ def explain_answer(answer_id: str, tenant: str = "parcelo"):
         if rows_latest:
             target_id = rows_latest[0][0]
         else:
-            raise HTTPException(status_code=404, detail="No Answer nodes found in graph.")
+            raise HTTPException(status_code=404, detail=f"No Answer nodes found in graph '{target_g}'. Run the alert storm first.")
 
-    registry = HindsightToolRegistry(db, f"t:{tenant}", event_bus=global_bus)
+    registry = HindsightToolRegistry(db, default_graph=target_g, event_bus=ctx["event_bus"])
     res = registry.explain(target_id)
     if "error" in res:
         raise HTTPException(status_code=404, detail=res["error"])
@@ -862,7 +1008,8 @@ def explain_answer(answer_id: str, tenant: str = "parcelo"):
 def get_graph_elements(request: Request, tenant: str = "parcelo"):
     """Returns nodes and edges formatted for Cytoscape.js rendering from the caller's graph."""
     db = get_db()
-    target_g = resolve_target_graph(request, tenant)
+    ctx = resolve_session_context(request, tenant=tenant)
+    target_g = ctx["target_graph"]
     g = db.select_graph(target_g)
 
     # Query all services
@@ -912,16 +1059,13 @@ def get_graph_elements(request: Request, tenant: str = "parcelo"):
             }
         })
 
-    return {"elements": {"nodes": nodes, "edges": edges}, "target_graph": target_g}
+    return {"elements": {"nodes": nodes, "edges": edges}, "target_graph": target_g, "session_id": ctx["session_id"]}
 
 @app.get("/api/events")
-async def sse_events(request: Request):
+async def sse_events(request: Request, tenant: str = "parcelo"):
     """Server-Sent Events endpoint streaming real-time events to the frontend with keepalive."""
-    sid = request.headers.get("X-Session-ID") or request.query_params.get("session_id")
-    if sid and sid in ACTIVE_SESSIONS:
-        bus = ACTIVE_SESSIONS[sid]["event_bus"]
-    else:
-        bus = global_bus
+    ctx = resolve_session_context(request, tenant=tenant)
+    bus = ctx["event_bus"]
 
     async def event_generator():
         q = asyncio.Queue()
@@ -931,6 +1075,12 @@ async def sse_events(request: Request):
 
         bus.subscribe(listener)
         try:
+            if getattr(request.state, "session_replaced", False):
+                yield {
+                    "event": "session_replaced",
+                    "data": json.dumps({"session_id": ctx["session_id"]})
+                }
+
             # Replay existing transcript to catch up client
             for past_ev in bus.get_events():
                 yield {
@@ -955,7 +1105,8 @@ async def sse_events(request: Request):
 
     return EventSourceResponse(event_generator())
 
-async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "parcelo", mode: str = "demo", reset: bool = True, session_id: Optional[str] = None):
+async def _execute_storm_workflow_inner(graph_name: str = "t:parcelo", tenant: str = "parcelo", mode: str = "demo", reset: bool = True, session_id: Optional[str] = None):
+    print(f"[STORM] Starting workflow: graph={graph_name}, tenant={tenant}, mode={mode}, reset={reset}, session_id={session_id}", flush=True)
     if session_id and session_id in ACTIVE_SESSIONS:
         st = ACTIVE_SESSIONS[session_id]["storm_state"]
         bus = ACTIVE_SESSIONS[session_id]["event_bus"]
@@ -973,11 +1124,18 @@ async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "p
     if reset:
         if graph_name.startswith("s:"):
             # Isolated session fork: reset by re-copying from golden t:{tenant}
+            print(f"[STORM] Resetting session fork {graph_name} from t:{tenant}", flush=True)
             try:
                 db.select_graph(graph_name).delete()
-            except Exception:
-                pass
-            db.connection.execute_command("GRAPH.COPY", f"t:{tenant}", graph_name)
+            except Exception as e:
+                print(f"[STORM] Graph delete warning (can ignore if not exists): {e}", flush=True)
+            try:
+                copy_res = db.connection.execute_command("GRAPH.COPY", f"t:{tenant}", graph_name)
+                print(f"[STORM] GRAPH.COPY result: {copy_res}", flush=True)
+            except Exception as e:
+                print(f"[STORM] GRAPH.COPY FAILED: {e}", flush=True)
+                logger.error(f"GRAPH.COPY failed while preparing storm graph {graph_name}: {e}")
+                raise
         else:
             try:
                 from seed.gen import generate_full_seed
@@ -1077,6 +1235,18 @@ async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "p
         "stale_docs": lib_res["stale_docs_count"],
         "graph": graph_name
     }
+    print(f"[STORM] Workflow completed successfully for {graph_name}!", flush=True)
+
+async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "parcelo", mode: str = "demo", reset: bool = True, session_id: Optional[str] = None):
+    try:
+        await _execute_storm_workflow_inner(graph_name=graph_name, tenant=tenant, mode=mode, reset=reset, session_id=session_id)
+    except Exception as e:
+        print(f"[STORM] CRITICAL EXCEPTION in execute_storm_workflow: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        logger.exception(f"CRITICAL EXCEPTION in execute_storm_workflow: {e}")
+        if session_id and session_id in ACTIVE_SESSIONS:
+            ACTIVE_SESSIONS[session_id]["storm_state"]["running"] = False
 
 @app.post("/api/storm/run")
 async def run_storm_endpoint(request: Request, background_tasks: BackgroundTasks, payload: Optional[Dict[str, Any]] = None):
@@ -1084,30 +1254,30 @@ async def run_storm_endpoint(request: Request, background_tasks: BackgroundTasks
     mode = payload.get("mode", "demo")
     tenant = payload.get("tenant") or request.query_params.get("tenant", "parcelo")
     reset = payload.get("reset", True)
-    sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
-    sess = get_or_create_session(session_id=sid, tenant=tenant)
-    target_graph = sess["target_graph"]
-    st = sess["storm_state"]
+    ctx = resolve_session_context(request, tenant=tenant, payload=payload, require_session=True)
+    target_graph = ctx["target_graph"]
+    st = ctx["storm_state"]
 
     if st["running"]:
-        return {"status": "already_running", "incident_id": st["incident_id"], "graph": target_graph, "session_id": sess["session_id"]}
+        return {"status": "already_running", "incident_id": st["incident_id"], "graph": target_graph, "session_id": ctx["session_id"]}
 
-    background_tasks.add_task(execute_storm_workflow, graph_name=target_graph, tenant=tenant, mode=mode, reset=reset, session_id=sess["session_id"])
-    return {"status": "started", "mode": mode, "graph": target_graph, "session_id": sess["session_id"]}
+    background_tasks.add_task(execute_storm_workflow, graph_name=target_graph, tenant=tenant, mode=mode, reset=reset, session_id=ctx["session_id"])
+    return {"status": "started", "mode": mode, "graph": target_graph, "session_id": ctx["session_id"]}
 
 @app.post("/api/storm/approve")
 def approve_storm_action(request: Request, payload: Optional[Dict[str, Any]] = None):
     payload = payload or {}
-    sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
-    if sid and sid in ACTIVE_SESSIONS:
-        st = ACTIVE_SESSIONS[sid]["storm_state"]
-        st["approval_received"].set()
-        st["pending_approval"] = False
-        return {"status": "approved", "session_id": sid, "message": f"Operator approval granted for procedure R-12 execution on session {sid}."}
-
-    storm_state["approval_received"].set()
-    storm_state["pending_approval"] = False
-    return {"status": "approved", "message": "Operator approval granted for procedure R-12 execution."}
+    tenant = payload.get("tenant") or request.query_params.get("tenant", "parcelo")
+    ctx = resolve_session_context(request, tenant=tenant, payload=payload, require_session=False)
+    st = ctx["storm_state"]
+    st["approval_received"].set()
+    st["pending_approval"] = False
+    return {
+        "status": "approved",
+        "session_id": ctx["session_id"],
+        "graph": ctx["target_graph"],
+        "message": f"Operator approval granted for procedure R-12 execution on {ctx['target_graph']}."
+    }
 
 @app.post("/api/baseline/storm")
 async def run_baseline_storm(payload: Optional[Dict[str, Any]] = None):
