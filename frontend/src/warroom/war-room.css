@@ -43,6 +43,13 @@
   --r-md: 1rem;
   --r-lg: 1.5rem;
   --r-pill: 9999px;
+  --radius-sm: 0.5rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-pill: 9999px;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-glass: rgba(255, 255, 255, 0.1);
+  --text-main: #ffffff;
   --inset: inset 0 1px 1px rgba(255, 255, 255, 0.08);
   --lift: 0 8px 32px rgba(0, 0, 0, 0.5);
 
@@ -75,7 +82,7 @@
 .war-room :focus-visible { outline: 2px solid rgba(125, 211, 252, 0.8); outline-offset: 2px; }
 
 /* Desktop app shell: fill the viewport and let panels scroll internally */
-@media (min-width: 1100px) and (min-height: 760px) {
+@media (min-width: 1100px) and (min-height: 800px) {
   .war-room { height: 100dvh; overflow: hidden; }
   .war-room .war-room-container { flex: 1; min-height: 0; }
 }
@@ -684,7 +691,8 @@
   grid-template-columns: minmax(0, 1fr) clamp(380px, 28vw, 500px);
   grid-template-rows: minmax(0, 1fr);
   gap: 12px;
-  height: max(540px, 70vh);
+  flex: 1;
+  min-height: 440px;
 }
 
 .war-room .viewport-panel,
@@ -956,12 +964,111 @@
 }
 
 /* ---------------- Bottom Terminal Stream ---------------- */
-.bottom-terminal {
+.war-room .bottom-terminal {
   height: 140px;
   background: rgba(8, 12, 20, 0.95);
-  border-top: 1px solid var(--border-subtle);
+  border: 1px solid var(--line);
   display: flex;
   flex-direction: column;
+  width: 100%;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--inset), var(--lift);
+  flex-shrink: 0;
+  z-index: 30;
+}
+
+.war-room .terminal-bar {
+  height: 32px;
+  background: rgba(15, 23, 42, 0.6);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  flex-shrink: 0;
+}
+
+.war-room .term-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.war-room .term-prompt {
+  color: var(--cyan);
+  font-weight: 700;
+  font-family: var(--wr-mono);
+}
+
+.war-room .term-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.war-room .term-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-family: var(--wr-mono);
+}
+
+.war-room .term-clear-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+  transition: color 150ms ease;
+}
+
+.war-room .term-clear-btn:hover {
+  color: #fff;
+}
+
+.war-room .terminal-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 1rem;
+  font-family: var(--wr-mono);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: #cbd5e1;
+}
+
+.war-room .feed-entry {
+  margin-bottom: 2px;
+}
+
+.war-room .feed-entry.system {
+  color: #38bdf8;
+}
+
+.war-room .feed-entry.alert {
+  color: #fb923c;
+}
+
+.war-room .feed-entry.task {
+  color: #cbd5e1;
+}
+
+.war-room .feed-entry.answer {
+  color: #34d399;
+}
+
+.war-room .feed-entry.refusal {
+  color: #f87171;
+}
+
+/* ---------------- Why Drawer (Provenance Inspector) ---------------- */
+.war-room .drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: min(500px, 100vw);
   height: 100dvh;
   background: rgba(8, 8, 8, 0.96);
@@ -969,6 +1076,9 @@
   -webkit-backdrop-filter: blur(24px);
   border-left: 1px solid var(--line-strong);
   box-shadow: -12px 0 48px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
   transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 300ms ease;
 }
 /* Closed: slide off-screen, drop the shadow and take it out of the tab order */
