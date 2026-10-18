@@ -114,9 +114,9 @@ async function initCytoscape(tenant = "parcelo") {
         {
           selector: "node",
           style: {
-            "background-color": "#334155",
+            "background-color": "#18181b",
             "label": "data(id)",
-            "color": "#cbd5e1",
+            "color": "#f8fafc",
             "font-size": "9px",
             "font-family": "Inter, sans-serif",
             "text-valign": "bottom",
@@ -124,7 +124,7 @@ async function initCytoscape(tenant = "parcelo") {
             "width": 24,
             "height": 24,
             "border-width": 1.5,
-            "border-color": "#475569",
+            "border-color": "rgba(255, 255, 255, 0.25)",
             "transition-property": "background-color, border-color, width, height, shadow-blur",
             "transition-duration": "0.3s"
           }
@@ -133,7 +133,7 @@ async function initCytoscape(tenant = "parcelo") {
         {
           selector: "node[tier = 'edge']",
           style: {
-            "background-color": "#1e293b",
+            "background-color": "#0c1e33",
             "border-color": "#38bdf8",
             "shape": "round-rectangle"
           }
@@ -141,16 +141,16 @@ async function initCytoscape(tenant = "parcelo") {
         {
           selector: "node[tier = 'domain']",
           style: {
-            "background-color": "#0f172a",
-            "border-color": "#64748b",
+            "background-color": "#18181b",
+            "border-color": "rgba(255, 255, 255, 0.4)",
             "shape": "ellipse"
           }
         },
         {
           selector: "node[tier = 'infra']",
           style: {
-            "background-color": "#1e1b4b",
-            "border-color": "#818cf8",
+            "background-color": "#1e1035",
+            "border-color": "#a855f7",
             "shape": "diamond"
           }
         },
@@ -158,7 +158,7 @@ async function initCytoscape(tenant = "parcelo") {
         {
           selector: "node.alerting",
           style: {
-            "background-color": "#ea580c",
+            "background-color": "#7c2d12",
             "border-color": "#f97316",
             "border-width": 3,
             "width": 28,
@@ -169,20 +169,20 @@ async function initCytoscape(tenant = "parcelo") {
         {
           selector: "node.blast",
           style: {
-            "border-color": "#eab308",
+            "border-color": "#f59e0b",
             "border-width": 2.5,
-            "background-color": "#713f12"
+            "background-color": "#451a03"
           }
         },
         {
           selector: "node.root",
           style: {
-            "background-color": "#dc2626",
+            "background-color": "#7f1d1d",
             "border-color": "#ef4444",
             "border-width": 4,
             "width": 36,
             "height": 36,
-            "color": "#fef2f2",
+            "color": "#ffffff",
             "font-weight": "bold",
             "font-size": "11px"
           }
@@ -190,7 +190,7 @@ async function initCytoscape(tenant = "parcelo") {
         {
           selector: "node.choke",
           style: {
-            "border-color": "#06b6d4",
+            "border-color": "#38bdf8",
             "border-width": 2.5
           }
         },
@@ -198,12 +198,12 @@ async function initCytoscape(tenant = "parcelo") {
           selector: "edge",
           style: {
             "width": 1.2,
-            "line-color": "#334155",
-            "target-arrow-color": "#334155",
+            "line-color": "rgba(255, 255, 255, 0.12)",
+            "target-arrow-color": "rgba(255, 255, 255, 0.15)",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
             "arrow-scale": 0.8,
-            "opacity": 0.6
+            "opacity": 0.7
           }
         },
         {
@@ -212,7 +212,7 @@ async function initCytoscape(tenant = "parcelo") {
             "width": 2.5,
             "line-color": "#38bdf8",
             "target-arrow-color": "#38bdf8",
-            "opacity": 0.95
+            "opacity": 1.0
           }
         },
         {
@@ -224,7 +224,7 @@ async function initCytoscape(tenant = "parcelo") {
             "line-style": "solid",
             "opacity": 1.0,
             "label": "+ ADR-17",
-            "color": "#6ee7b7",
+            "color": "#34d399",
             "font-size": "9px",
             "font-weight": "bold"
           }
@@ -238,7 +238,7 @@ async function initCytoscape(tenant = "parcelo") {
             "line-style": "dashed",
             "opacity": 1.0,
             "label": "- ADR-17",
-            "color": "#fca5a5",
+            "color": "#f87171",
             "font-size": "9px",
             "font-weight": "bold"
           }
@@ -249,8 +249,8 @@ async function initCytoscape(tenant = "parcelo") {
             "border-color": "#ef4444",
             "border-style": "dashed",
             "border-width": 3.5,
-            "opacity": 0.65,
-            "color": "#fca5a5"
+            "opacity": 0.5,
+            "color": "#f87171"
           }
         },
         {
@@ -259,7 +259,7 @@ async function initCytoscape(tenant = "parcelo") {
             "border-color": "#10b981",
             "border-width": 3.5,
             "background-color": "#064e3b",
-            "color": "#6ee7b7"
+            "color": "#34d399"
           }
         }
       ],
