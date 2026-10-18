@@ -6,15 +6,15 @@
 
 [![FalkorDB](https://img.shields.io/badge/Graph_Engine-FalkorDB_v0.5.0-blue.svg)](https://falkordb.com)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI_+_SSE-green.svg)](https://fastapi.tiangolo.com)
-[![Live Demo](https://img.shields.io/badge/Live_Landing_Page-http%3A%2F%2F43.204.29.169%3A8000-brightgreen.svg)](http://43.204.29.169:8000)
-[![Live War Room](https://img.shields.io/badge/Live_War_Room-http%3A%2F%2F43.204.29.169%3A8000%2Fapp%2F-blueviolet.svg)](http://43.204.29.169:8000/app/)
+[![Live Demo](https://img.shields.io/badge/Live_Landing_Page-https%3A%2F%2Fhindsight.agdev10.online-brightgreen.svg)](https://hindsight.agdev10.online)
+[![Live War Room](https://img.shields.io/badge/Live_War_Room-https%3A%2F%2Fhindsight.agdev10.online%2Fapp%2F-blueviolet.svg)](https://hindsight.agdev10.online/app/)
 [![MCP](https://img.shields.io/badge/Protocol-Model_Context_Protocol-purple.svg)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/License-Apache_2.0-lightgrey.svg)](LICENSE)
 
-> 🌐 **Live Public Deployment:**
-> - **Landing Page:** [http://43.204.29.169:8000/](http://43.204.29.169:8000/)
-> - **Operational War Room:** [http://43.204.29.169:8000/app/](http://43.204.29.169:8000/app/)
-> - **Live FalkorDB Health:** [http://43.204.29.169:8000/health](http://43.204.29.169:8000/health) (2,846 nodes, 6,933 edges)
+> 🌐 **Live Public Deployment (SSL Secured 🔒):**
+> - **Landing Page:** [https://hindsight.agdev10.online/](https://hindsight.agdev10.online/)
+> - **Operational War Room:** [https://hindsight.agdev10.online/app/](https://hindsight.agdev10.online/app/)
+> - **Live FalkorDB Health:** [https://hindsight.agdev10.online/health](https://hindsight.agdev10.online/health) (2,846 nodes, 6,933 edges)
 
 ---
 
