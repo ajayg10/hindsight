@@ -123,7 +123,16 @@ def get_or_create_session(session_id: Optional[str] = None, tenant: str = "parce
         "target_graph": target_graph,
         "created_at": now,
         "last_active": now,
-        "copy_duration_ms": copy_ms
+        "copy_duration_ms": copy_ms,
+        "event_bus": EventBus(mode="fast"),
+        "storm_state": {
+            "running": False,
+            "current_step": 0,
+            "incident_id": None,
+            "pending_approval": False,
+            "approval_received": asyncio.Event(),
+            "last_result": None
+        }
     }
     ACTIVE_SESSIONS[sid] = sess_data
     return sess_data
@@ -228,6 +237,20 @@ def reset_session_endpoint(request: Request, payload: Optional[Dict[str, Any]] =
         pass
     db.connection.execute_command("GRAPH.COPY", sess["source_graph"], sess["target_graph"])
     copy_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+    # Reset visitor fork event stream and workflow state
+    if "event_bus" in sess:
+        sess["event_bus"].clear()
+    if "storm_state" in sess:
+        sess["storm_state"] = {
+            "running": False,
+            "current_step": 0,
+            "incident_id": None,
+            "pending_approval": False,
+            "approval_received": asyncio.Event(),
+            "last_result": None
+        }
+
     return {
         "status": "reset",
         "session_id": sess["session_id"],
@@ -417,24 +440,37 @@ def get_timeline_diff(tenant: str = "parcelo"):
     }
 
 @app.post("/api/race")
-def run_worker_race(request: Request, workers: int = 32, tasks: int = 8, tenant: str = "parcelo"):
+def run_worker_race(request: Request, workers: int = 32, tasks: int = 8, tenant: str = "parcelo", payload: Optional[Dict[str, Any]] = None):
     """Executes atomic worker claim race (capped at 32 concurrent workers)."""
-    cap_workers = min(max(workers, 2), 32)
+    payload = payload or {}
+    w = int(payload.get("workers", workers))
+    t = int(payload.get("tasks", tasks))
+    ten = payload.get("tenant", tenant)
+    cap_workers = min(max(w, 2), 32)
     db = get_db()
-    target_g = resolve_target_graph(request, tenant)
+    sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    if sid:
+        sess = get_or_create_session(session_id=sid, tenant=ten)
+        target_g = sess["target_graph"]
+    else:
+        target_g = resolve_target_graph(request, ten)
+
     race_graph = f"{target_g}_race" if target_g.startswith("s:") else "spike:ui_race"
-    from eval.race import run_race_harness
-    res = run_race_harness(db, graph_name=race_graph, workers=cap_workers, tasks=tasks)
+    try:
+        from backend.eval.race import run_race_harness
+    except ImportError:
+        from eval.race import run_race_harness
+    res = run_race_harness(db, graph_name=race_graph, workers=cap_workers, tasks=t)
     return {
         "workers": cap_workers,
-        "tasks": tasks,
+        "tasks": t,
         "graph": race_graph,
-        "claims_won": res.get("claims_won", tasks),
+        "claims_won": res.get("claims_won", t),
         "lost_attempts": res.get("lost_attempts", 0),
         "double_claims": res.get("double_claims", 0),
         "elapsed_ms": round(res.get("race_elapsed_ms", 0), 2),
         "status": "success",
-        "message": f"{cap_workers} workers raced for {tasks} tasks: {res.get('claims_won', tasks)} won, {res.get('lost_attempts', 0)} lost, STRICTLY 0 double claims!"
+        "message": f"{cap_workers} workers raced for {t} tasks: {res.get('claims_won', t)} won, {res.get('lost_attempts', 0)} lost, STRICTLY 0 double claims!"
     }
 
 @app.post("/api/agent/kill")
@@ -875,16 +911,22 @@ def get_graph_elements(request: Request, tenant: str = "parcelo"):
 @app.get("/api/events")
 async def sse_events(request: Request):
     """Server-Sent Events endpoint streaming real-time events to the frontend with keepalive."""
+    sid = request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    if sid and sid in ACTIVE_SESSIONS:
+        bus = ACTIVE_SESSIONS[sid]["event_bus"]
+    else:
+        bus = global_bus
+
     async def event_generator():
         q = asyncio.Queue()
 
         def listener(ev: Event):
             q.put_nowait(ev)
 
-        global_bus.subscribe(listener)
+        bus.subscribe(listener)
         try:
             # Replay existing transcript to catch up client
-            for past_ev in global_bus.get_events():
+            for past_ev in bus.get_events():
                 yield {
                     "event": past_ev.event_type,
                     "data": json.dumps(asdict(past_ev))
@@ -903,14 +945,21 @@ async def sse_events(request: Request):
                     # Keepalive comment to prevent mobile browser & proxy dropouts
                     yield {"event": "ping", "data": ": keepalive\n\n"}
         finally:
-            global_bus.unsubscribe(listener)
+            bus.unsubscribe(listener)
 
     return EventSourceResponse(event_generator())
 
-async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "parcelo", mode: str = "demo", reset: bool = True):
-    storm_state["running"] = True
-    storm_state["pending_approval"] = False
-    storm_state["approval_received"].clear()
+async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "parcelo", mode: str = "demo", reset: bool = True, session_id: Optional[str] = None):
+    if session_id and session_id in ACTIVE_SESSIONS:
+        st = ACTIVE_SESSIONS[session_id]["storm_state"]
+        bus = ACTIVE_SESSIONS[session_id]["event_bus"]
+    else:
+        st = storm_state
+        bus = global_bus
+
+    st["running"] = True
+    st["pending_approval"] = False
+    st["approval_received"].clear()
 
     db = get_db()
     delay_s = 1.0 if mode == "demo" else 0.05
@@ -924,11 +973,14 @@ async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "p
                 pass
             db.connection.execute_command("GRAPH.COPY", f"t:{tenant}", graph_name)
         else:
-            from gen import generate_full_seed
+            try:
+                from seed.gen import generate_full_seed
+            except ImportError:
+                from gen import generate_full_seed
             generate_full_seed(db, graph_name)
 
-    global_bus.clear()
-    registry = HindsightToolRegistry(db, graph_name, event_bus=global_bus)
+    bus.clear()
+    registry = HindsightToolRegistry(db, graph_name, event_bus=bus)
     g = db.select_graph(graph_name)
 
     g.query("""
@@ -963,12 +1015,12 @@ async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "p
         {"service": "inventory", "metric": "latency", "value": 620}
     ]
     for a in alerts:
-        global_bus.emit("alert", a)
+        bus.emit("alert", a)
 
     await asyncio.sleep(delay_s)
     storm_res = await sentinel.handle_alert_storm(alerts)
     inc_id = storm_res["incident_id"]
-    storm_state["incident_id"] = inc_id
+    st["incident_id"] = inc_id
 
     # 2. Parallel Investigation
     await asyncio.sleep(delay_s)
@@ -988,18 +1040,18 @@ async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "p
     # 5. Responder recall & guardrail gate
     await asyncio.sleep(delay_s)
     remed_unapproved = await responder.remediate("task-remediate-inc-8821", inc_id, "cache-b", operator_approved=False)
-    storm_state["pending_approval"] = True
+    st["pending_approval"] = True
 
     # In demo mode, wait for operator sign-off or auto-approve after brief window
     if mode == "demo":
         try:
-            await asyncio.wait_for(storm_state["approval_received"].wait(), timeout=6.0)
+            await asyncio.wait_for(st["approval_received"].wait(), timeout=6.0)
         except asyncio.TimeoutError:
             pass  # Auto-sign off to advance demo smoothly
 
     # 5b. Remediation execution
     remed_approved = await responder.remediate("task-remediate-inc-8821", inc_id, "cache-b", operator_approved=True, operator_name="operator-oncall")
-    storm_state["pending_approval"] = False
+    st["pending_approval"] = False
 
     # 6. Concierge routing
     await asyncio.sleep(delay_s)
@@ -1009,8 +1061,8 @@ async def execute_storm_workflow(graph_name: str = "t:parcelo", tenant: str = "p
     await asyncio.sleep(delay_s)
     lib_res = await librarian.run_maintenance_cycle()
 
-    storm_state["running"] = False
-    storm_state["last_result"] = {
+    st["running"] = False
+    st["last_result"] = {
         "incident_id": inc_id,
         "root_cause": "cache-b",
         "subsumed": "checkout-api",
@@ -1029,15 +1081,24 @@ async def run_storm_endpoint(request: Request, background_tasks: BackgroundTasks
     sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
     sess = get_or_create_session(session_id=sid, tenant=tenant)
     target_graph = sess["target_graph"]
+    st = sess["storm_state"]
 
-    if storm_state["running"]:
-        return {"status": "already_running", "incident_id": storm_state["incident_id"], "graph": target_graph}
+    if st["running"]:
+        return {"status": "already_running", "incident_id": st["incident_id"], "graph": target_graph, "session_id": sess["session_id"]}
 
-    background_tasks.add_task(execute_storm_workflow, graph_name=target_graph, tenant=tenant, mode=mode, reset=reset)
+    background_tasks.add_task(execute_storm_workflow, graph_name=target_graph, tenant=tenant, mode=mode, reset=reset, session_id=sess["session_id"])
     return {"status": "started", "mode": mode, "graph": target_graph, "session_id": sess["session_id"]}
 
 @app.post("/api/storm/approve")
-def approve_storm_action():
+def approve_storm_action(request: Request, payload: Optional[Dict[str, Any]] = None):
+    payload = payload or {}
+    sid = payload.get("session_id") or request.headers.get("X-Session-ID") or request.query_params.get("session_id")
+    if sid and sid in ACTIVE_SESSIONS:
+        st = ACTIVE_SESSIONS[sid]["storm_state"]
+        st["approval_received"].set()
+        st["pending_approval"] = False
+        return {"status": "approved", "session_id": sid, "message": f"Operator approval granted for procedure R-12 execution on session {sid}."}
+
     storm_state["approval_received"].set()
     storm_state["pending_approval"] = False
     return {"status": "approved", "message": "Operator approval granted for procedure R-12 execution."}
