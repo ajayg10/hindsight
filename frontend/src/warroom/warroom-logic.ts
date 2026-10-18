@@ -512,6 +512,9 @@ function updateCrewLanes(ev) {
     document.getElementById("gate-action-box").classList.remove("hidden");
     document.getElementById("lane-responder").classList.add("warning");
 
+    const guideStep2 = document.getElementById("guide-step-2");
+    if (guideStep2) guideStep2.classList.add("pulsing-attention");
+
     // Highlight 14 blast radius nodes on graph
     if (cy) {
       const blastServices = [
@@ -529,6 +532,13 @@ function updateCrewLanes(ev) {
     document.getElementById("gate-action-box").classList.add("hidden");
     document.getElementById("lane-responder").classList.remove("warning");
     document.getElementById("lane-responder").classList.add("success");
+
+    const guideStep2 = document.getElementById("guide-step-2");
+    if (guideStep2) {
+      guideStep2.classList.remove("pulsing-attention");
+      guideStep2.classList.add("completed");
+    }
+
     document.getElementById("content-responder").innerHTML += `
       <div class="card-detail" style="border-left-color: #10b981; margin-top: 0.3rem;">
         ✓ Executed procedure ${p.procedure_id} with operator approval (${p.operator}).
@@ -1144,6 +1154,83 @@ function initControls() {
       } finally {
         btnFork.style.opacity = "1";
       }
+    });
+  }
+
+  // -----------------------------------------------------------
+  // Demo Director & Video Script Teleprompter Controls
+  // -----------------------------------------------------------
+  const guideStep1 = document.getElementById("guide-step-1");
+  const guideStep2 = document.getElementById("guide-step-2");
+  const guideStep3 = document.getElementById("guide-step-3");
+  const guideStep4 = document.getElementById("guide-step-4");
+  const btnScript = document.getElementById("btn-video-script");
+  const scriptModal = document.getElementById("script-modal");
+  const scriptClose = document.getElementById("script-close");
+  const tabEn = document.getElementById("tab-script-en");
+  const tabHi = document.getElementById("tab-script-hi");
+  const contentEn = document.getElementById("script-content-en");
+  const contentHi = document.getElementById("script-content-hi");
+
+  if (guideStep1) {
+    guideStep1.addEventListener("click", () => {
+      const runBtn = document.getElementById("btn-run-storm");
+      if (runBtn) runBtn.click();
+      guideStep1.classList.add("active");
+    });
+  }
+
+  if (guideStep2) {
+    guideStep2.addEventListener("click", () => {
+      const gateBox = document.getElementById("gate-action-box");
+      const approveBtn = document.getElementById("btn-approve-gate");
+      if (gateBox && !gateBox.classList.contains("hidden") && approveBtn) {
+        approveBtn.click();
+      } else {
+        const runBtn = document.getElementById("btn-run-storm");
+        if (runBtn) runBtn.click();
+      }
+    });
+  }
+
+  if (guideStep3) {
+    guideStep3.addEventListener("click", () => {
+      const toggleBtn = document.getElementById("btn-graph-toggle");
+      if (isGraphOn && toggleBtn) {
+        toggleBtn.click();
+      }
+      const runBtn = document.getElementById("btn-run-storm");
+      if (runBtn) runBtn.click();
+      guideStep3.classList.add("active");
+    });
+  }
+
+  if (guideStep4) {
+    guideStep4.addEventListener("click", () => {
+      const companyBtn = document.getElementById("btn-company-modal");
+      if (companyBtn) companyBtn.click();
+      guideStep4.classList.add("active");
+    });
+  }
+
+  if (btnScript && scriptModal) {
+    btnScript.addEventListener("click", () => scriptModal.classList.remove("hidden"));
+  }
+  if (scriptClose && scriptModal) {
+    scriptClose.addEventListener("click", () => scriptModal.classList.add("hidden"));
+  }
+  if (tabEn && tabHi && contentEn && contentHi) {
+    tabEn.addEventListener("click", () => {
+      tabEn.classList.add("active");
+      tabHi.classList.remove("active");
+      contentEn.classList.remove("hidden");
+      contentHi.classList.add("hidden");
+    });
+    tabHi.addEventListener("click", () => {
+      tabHi.classList.add("active");
+      tabEn.classList.remove("active");
+      contentHi.classList.remove("hidden");
+      contentEn.classList.add("hidden");
     });
   }
 }
