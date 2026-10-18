@@ -22,30 +22,19 @@ export default function WarRoomView() {
           href="/"
           className="back-link"
           title="Return to Hindsight Landing Page"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            color: "#94a3b8",
-            fontSize: "0.85rem",
-            fontWeight: 500,
-            textDecoration: "none",
-            marginRight: "0.75rem",
-            padding: "0.25rem 0.5rem",
-            borderRadius: "4px",
-            background: "rgba(255, 255, 255, 0.05)",
-          }}
         >
           &larr; Hindsight
         </Link>
       <div className="logo-mark">
         <span className="pulse-dot"></span>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
-          <polyline points="12 6 12 12 16 14"></polyline>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
         </svg>
       </div>
       <div className="brand-text">
-        <h1>HINDSIGHT</h1>
+        <h1>Hindsight</h1>
         <span className="brand-tag">Incident War Room &bull; FalkorDB</span>
       </div>
     </div>
