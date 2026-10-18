@@ -5,7 +5,7 @@ export interface MediaItem {
 
 export const media: Record<"hero" | "featured" | "philosophy" | "serviceA" | "serviceB", MediaItem> = {
   hero: {
-    poster: "/images/hero-bg.jpg",
+    poster: "/images/hero-bg.png",
     video:
       "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260405_074625_a81f018a-956b-43fb-9aee-4d1508e30e6a.mp4",
   },

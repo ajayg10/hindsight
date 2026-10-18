@@ -10,15 +10,17 @@ import { HeroBackground } from "../ui/HeroBackground";
 
 export const Hero: React.FC = () => {
   return (
-    <section className="min-h-screen relative flex flex-col overflow-hidden justify-between">
-      {/* Background with video/poster + rAF fade */}
+    <section className="min-h-[100svh] relative flex flex-col overflow-hidden justify-between">
+      {/* Background: video is the priority, poster is only a fallback */}
       <HeroBackground poster={media.hero.poster} video={media.hero.video} />
 
-      {/* Navbar */}
+      {/* Navbar is position: fixed, so it takes no space here */}
       <Navbar />
 
-      {/* Center Hero Content */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-12 text-center -translate-y-[20%] max-w-5xl mx-auto my-auto">
+      {/* Center Hero Content
+          pt-32 reserves room for the fixed navbar (~88px) so the heading never sits under it.
+          Removed -translate-y-[20%] and my-auto, which pushed the heading up into the nav. */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pt-32 pb-24 text-center max-w-5xl mx-auto w-full">
         <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl text-white tracking-tight md:whitespace-nowrap font-display mb-8">
           Remember it <em className="italic">all</em>.
         </h1>
