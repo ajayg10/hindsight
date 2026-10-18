@@ -1201,19 +1201,19 @@ OUT_DIR = FRONTEND_DIR / "out"
 LEGACY_DIR = FRONTEND_DIR / "legacy"
 
 if OUT_DIR.exists():
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     def serve_index():
         index_file = OUT_DIR / "index.html"
         if index_file.exists():
-            return FileResponse(index_file)
+            return FileResponse(index_file, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
         return HTMLResponse("<h1>Hindsight Frontend Loading...</h1>")
 
-    @app.get("/app")
-    @app.get("/app/")
+    @app.api_route("/app", methods=["GET", "HEAD"])
+    @app.api_route("/app/", methods=["GET", "HEAD"])
     def serve_app():
         app_file = OUT_DIR / "app" / "index.html"
         if app_file.exists():
-            return FileResponse(app_file)
+            return FileResponse(app_file, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
         return HTMLResponse("<h1>Hindsight War Room Loading...</h1>")
 
     @app.get("/icon.png")
