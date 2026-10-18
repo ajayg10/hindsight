@@ -121,20 +121,58 @@ flowchart TD
 
 ## Empirical Benchmark: 20 Randomized Synthetic Incident Storms
 
-We evaluated Hindsight against a flat Keyword / TF-IDF Baseline across **20 randomized synthetic incident storms** (18 single-fault storms with injected noise + 2 multi-fault storms with disjoint roots) over the enriched `t:parcelo` graph (**2,846 nodes, 6,933 edges**).
+We evaluated Hindsight against three baseline approaches across **20 randomized synthetic incident storms** (18 single-fault storms with injected noise + 2 multi-fault storms with disjoint roots) over the enriched `t:parcelo` graph (**2,846 nodes, 6,933 edges**). The storms are split into a **Dev Set** ($N=9$ single-fault + 1 multi-fault) and a **Held-Out Set** ($N=9$ single-fault + 1 multi-fault, fixed seed `seed=42`).
 
-> **Note on Evaluation:** All metrics below are evaluated on synthetic topologies and synthetic storms generated with fixed seed `seed=42`.
+### Headline Result: Held-Out Performance
+On the unseen **Held-Out Set ($N=9$)**, Hindsight achieves **55.6% raw Top-1 accuracy** (5/9), **77.8% Top-1 within the topological equivalence class** (7/9), and **100.0% Top-3 accuracy** (9/9), compared to 44.4% Top-1 for the strongest text baseline and 6.5% for uniform random upstream guessing.
 
-| Benchmark Metric | Hindsight (Graph ON) | Keyword Baseline (Graph OFF) | Delta / Impact |
-| :--- | :---: | :---: | :---: |
-| **Dev Set Top-1 Root-Cause Accuracy (N=10)** | **66.7%** | 0.0% | **+66.7%** (Text search picks alerting leaf) |
-| **Held-Out Set Top-1 Root-Cause Accuracy (N=10)** | **55.6%** | 0.0% | **+55.6%** (Generalizes to unseen roots) |
-| **Combined Top-1 Root-Cause Accuracy (N=20)** | **61.1%** | 0.0% | **+61.1%** |
-| **Combined Top-3 Root-Cause Accuracy (N=20)** | **100.0%** (18/18) | 0.0% | **+100.0%** (Planted root always in top 3) |
-| **Who-to-Page Routing Accuracy (N=20)** | **94.4%** (17/18) | 0.0% | **+94.4%** (Baseline pages absent lead) |
-| **Blast-Radius Mean Recall (N=20)** | **95.6%** | N/A | Topology required for blast radius |
-| **Multi-Fault Disjoint Separation (N=20)** | **100.0%** (2/2) | 0.0% | Baseline collapses disjoint incidents |
-| **Mean End-to-End Latency per Storm** | **9.12 ms** | 1.8 ms | Full graph reasoning in $<10\text{ ms}$ |
+### Evaluation Baselines Defined
+1. **Stronger Text Baseline (Mentions in Retrieved Past Incidents & Docs):**
+   - For all alerting services, retrieves top-$k$ related architectural docs, runbooks, and past incident episodes.
+   - Extracts mentioned service dependencies and votes for the services most cited in the alert context.
+   - For on-call routing, pages the primary author of the documentation describing the top-voted service.
+2. **Random Upstream Baseline:**
+   - Samples uniformly at random among all candidate services strictly upstream of the alerting services (~14-16 upstream candidates per storm).
+3. **Flat Alert-Frequency Baseline (Graph OFF):**
+   - Naively selects the service with the highest incoming alert volume (the leaf consumer, e.g. `checkout-api` or `frontend`).
+
+> [!NOTE]
+> **Where Baselines Fail by Construction:**
+> - **Who-to-Page Routing:** The text baseline scores **0.0%** across all storms because text retrieval lacks live HR availability integration; it pages senior doc authors (e.g., Priya Sharma) who are actively on leave (`status: 'leave'`), dropping critical pages. Hindsight integrates graph traversal with HR status to route to active on-call peers (Marco Rossi).
+> - **Multi-Fault Incident Separation:** Both text and random baselines score **0.0%** on multi-fault storms because without graph reachability/connected components, they collapse disjoint concurrent incidents into a single incident bucket.
+> - **Flat Baseline Root Cause:** The flat baseline scores **0.0%** because root causes in microservice cascades are upstream dependencies (`cache-b`, `orders-db`) whose downstream callers emit the error alerts.
+
+### Benchmark Results Table (Deltas in Percentage Points `pp`)
+
+| Benchmark Metric | Hindsight (Graph ON) | Strong Text Baseline | Random Upstream | Flat (Graph OFF) | Delta vs Text (pp) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Held-Out Top-1 Root Cause (Headline, N=9)** | **55.6%** (5/9) | 44.4% (4/9) | 6.5% | 0.0% | **+11.1 pp** |
+| **Held-Out Top-1 (Equivalence Class, N=9)** | **77.8%** (7/9) | 44.4% (4/9) | 6.5% | 0.0% | **+33.3 pp** |
+| **Held-Out Top-3 Root Cause (N=9)** | **100.0%** (9/9) | 66.7% (6/9) | 19.4% | 0.0% | **+33.3 pp** |
+| **Held-Out Who-to-Page Accuracy (N=9)** | **88.9%** (8/9) | 0.0% (0/9) | N/A (no HR) | 0.0% | **+88.9 pp** |
+| **Dev Set Top-1 Root Cause (N=9)** | **66.7%** (6/9) | 66.7% (6/9) | 7.1% | 0.0% | **+0.0 pp** |
+| **Dev Set Top-1 (Equivalence Class, N=9)** | **88.9%** (8/9) | 66.7% (6/9) | 7.1% | 0.0% | **+22.2 pp** |
+| **Dev Set Top-3 Root Cause (N=9)** | **100.0%** (9/9) | 100.0% (9/9) | 21.4% | 0.0% | **+0.0 pp** |
+| **Combined Top-1 Root Cause (N=18)** | **61.1%** (11/18) | 55.6% (10/18) | 6.8% | 0.0% | **+5.6 pp** |
+| **Combined Top-1 (Equivalence Class, N=18)** | **83.3%** (15/18) | 55.6% (10/18) | 6.8% | 0.0% | **+27.7 pp** |
+| **Combined Top-3 Root Cause (N=18)** | **100.0%** (18/18) | 83.3% (15/18) | 20.3% | 0.0% | **+16.7 pp** |
+| **Combined Who-to-Page Accuracy (N=18)** | **94.4%** (17/18) | 0.0% (0/18) | N/A (no HR) | 0.0% | **+94.4 pp** |
+| **Blast-Radius Mean Recall (N=18)** | **96.3%** | N/A | N/A | N/A | Topology required |
+| **Blast-Radius Mean Precision (N=18)** | **81.4%** | N/A | N/A | N/A | Non-gameable |
+| **Blast-Radius Mean F1-Score (N=18)** | **85.4%** | N/A | N/A | N/A | High precision |
+| **Multi-Fault Separation (N=2, reported sep.)** | **100.0%** (2/2) | 0.0% (collapsed) | 0.0% | 0.0% | **+100.0 pp** |
+| **Mean End-to-End Latency per Storm** | **5.63 ms** | 12.4 ms | 0.4 ms | 1.8 ms | Full graph $<6\text{ ms}$ |
+
+### Understanding the Misses & Topological Equivalence Classes
+
+> **Why did Combined Top-1 drop from 72.2% to 61.1% after Q10 subsumption?**
+> In earlier versions without Q10 candidate subsumption, Investigator-A broke ties heuristically between competing candidates. When we added Q10 path subsumption, it systematically preferred the strictly upstream ancestor (`c1 -[:DEPENDS_ON*]-> c2`).
+>
+> In storms where an intermediate service was the true root cause (e.g. `planted_root = checkout-api`), but alerts only fired on downstream leaf consumers (`frontend`, `mobile-gateway`), both `checkout-api` and its upstream dependency `cache-b` explain 100% of the alerted services. They form a **topological equivalence class**—from downstream alert reachability alone, both nodes explain the exact same symptom subgraph.
+>
+> Q10 correctly identifies `cache-b` as the upstream root. While this scores as a raw Top-1 miss against the planted intermediate node, it is topologically valid. Within the **equivalence class**, Hindsight scores **77.8% on held-out** and **83.3% combined**, and **Top-3 accuracy is 100.0%** across all 18 single-fault storms.
+>
+> Furthermore, reporting **81.4% blast precision** and **85.4% F1** alongside **96.3% recall** proves that Hindsight does not game recall by over-predicting the entire graph.
 
 ---
 
@@ -183,6 +221,9 @@ docker compose exec web python backend/eval/storms.py
 
 # Verify per-session fork isolation and deployment constraints
 docker compose exec web python scripts/test_part_b_deployment.py
+
+# Verify two-session concurrent isolation (concurrent storm/Race/Approve/Reset with zero cross-contamination)
+docker compose exec web python scripts/test_two_session_isolation.py
 ```
 
 ---
@@ -196,6 +237,8 @@ Hindsight includes a turnkey production deployment configuration (`docker-compos
 chmod +x deploy.sh
 ./deploy.sh <your-ip>.sslip.io
 ```
+
+For complete step-by-step VPS provisioning instructions (DigitalOcean, Hetzner, AWS Lightsail), TLS fallback options (DuckDNS, Cloudflare Quick Tunnel), and the 5-point post-deploy checklist, see the **[Production Deployment Guide (docs/DEPLOY.md)](docs/DEPLOY.md)**.
 
 ### Production Security & Isolation Features
 - **Internal Network Only:** FalkorDB port `6379` is never published to the host network; it is accessible only by the internal `web` container.

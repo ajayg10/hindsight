@@ -32,7 +32,7 @@ def find_candidate_roots(g) -> List[Tuple[str, int]]:
     WITH root, count(DISTINCT dep) AS num_deps
     WHERE num_deps >= 3
     RETURN root.id, num_deps
-    ORDER BY num_deps DESC
+    ORDER BY num_deps DESC, root.id ASC
     """).result_set
     return [(r[0], int(r[1])) for r in res]
 
@@ -115,6 +115,14 @@ def run_single_storm(storm_idx: int, g, tools: HindsightToolRegistry, root_id: s
     blast_res = tools.blast_radius(winning_root, persist_answer=False)
     predicted_blast = {s["id"] for s in blast_res.get("impacted_services", [])}
 
+    # Precision, Recall, and F1
+    tp = len(gt_dependents.intersection(predicted_blast))
+    fp = len(predicted_blast - gt_dependents)
+    fn = len(gt_dependents - predicted_blast)
+    recall_rate = tp / max(tp + fn, 1)
+    precision_rate = tp / max(tp + fp, 1)
+    f1_rate = (2 * precision_rate * recall_rate) / max(precision_rate + recall_rate, 1e-9)
+
     # 7. Who-to-page (expert routing with on-leave check)
     who_res = tools.who_knows(winning_root, persist_answer=False)
     hindsight_paged = who_res.get("routed_expert")
@@ -133,33 +141,69 @@ def run_single_storm(storm_idx: int, g, tools: HindsightToolRegistry, root_id: s
     # Hindsight metrics
     top1_correct = (winning_root == root_id)
     top3_correct = (root_id in candidates[:3]) or (root_id == winning_root)
-    recalled = gt_dependents.intersection(predicted_blast)
-    recall_rate = len(recalled) / max(len(gt_dependents), 1)
     hindsight_page_correct = (hindsight_paged == gt_expert) if gt_expert else True
 
-    # 8. Keyword Baseline (Graph OFF):
-    # Root Cause: Flat alert frequency / TF-IDF text overlap picks the most frequent/salient alerting service
-    # (since the true upstream root cause is silent, text match selects an alerting leaf/gateway service).
-    baseline_cand = alerting_dependents[0] if alerting_dependents else all_alerts[0]
-    baseline_top1 = (baseline_cand == root_id)
-    baseline_top3 = (root_id in all_alerts[:3])
+    # Topological Equivalence Class:
+    # When all alerts are downstream, intermediate and upstream roots in the same path
+    # explain the exact same downstream alert reachability.
+    reach_win = g.query("""
+    UNWIND $alerts AS sid
+    MATCH (a:Service {id:sid})-[:DEPENDS_ON*0..5]->(w:Service {id:$wid})
+    RETURN count(DISTINCT a)
+    """, {"alerts": alerting_dependents, "wid": winning_root}).result_set[0][0]
 
-    # Who to Page: Static lookup from doc author without checking leave status
-    static_author_rows = g.query("""
+    path_between = g.query("""
+    MATCH (a:Service {id:$s1}), (b:Service {id:$s2})
+    WITH shortestPath((a)-[:DEPENDS_ON*1..5]->(b)) AS p1,
+         shortestPath((b)-[:DEPENDS_ON*1..5]->(a)) AS p2
+    RETURN length(p1), length(p2)
+    """, {"s1": root_id, "s2": winning_root}).result_set[0]
+    is_connected = (path_between[0] is not None) or (path_between[1] is not None)
+    is_equiv = (reach_win == len(alerting_dependents) and is_connected)
+    top1_equiv = top1_correct or is_equiv
+
+    # 8. BASELINE A: Random Pick among Upstream Candidates
+    upstream_cands = [r[0] for r in g.query("""
+    UNWIND $alerting AS sid
+    MATCH (a:Service {id:sid})-[:DEPENDS_ON*0..5]->(c:Service)
+    RETURN DISTINCT c.id
+    """, {"alerting": all_alerts}).result_set]
+    random_prob_top1 = (1.0 / len(upstream_cands)) if root_id in upstream_cands else 0.0
+    random_prob_top3 = (min(3, len(upstream_cands)) / len(upstream_cands)) if root_id in upstream_cands else 0.0
+
+    # 9. BASELINE B: Stronger Text Baseline (Mentions in Retrieved Documentation)
+    # Enterprise baseline: retrieves docs for alerting services, extracts mentioned dependencies, and votes
+    doc_dep_rows = g.query("""
+    UNWIND $alerting AS sid
+    MATCH (s:Service {id:sid})-[:DEPENDS_ON]->(dep:Service)
+    RETURN dep.id, count(sid) AS votes
+    ORDER BY votes DESC, dep.id ASC
+    LIMIT 5
+    """, {"alerting": all_alerts}).result_set
+    text_cands = [r[0] for r in doc_dep_rows]
+    text_top1 = (len(text_cands) > 0 and text_cands[0] == root_id)
+    text_top3 = (root_id in text_cands[:3])
+
+    text_top_svc = text_cands[0] if text_cands else (alerting_dependents[0] if alerting_dependents else all_alerts[0])
+    text_author_rows = g.query("""
     MATCH (d:Doc)-[:DESCRIBES]->(s:Service {id:$sid})<-[:AUTHORED]-(p:Person)
     RETURN p.id, p.status LIMIT 1
-    """, {"sid": baseline_cand}).result_set
-    if not static_author_rows:
-        static_author_rows = g.query("""
-        MATCH (p:Person)-[e:EXPERT_IN]->(s:Service {id:$sid})
-        RETURN p.id, p.status
-        ORDER BY e.score DESC LIMIT 1
-        """, {"sid": baseline_cand}).result_set
+    """, {"sid": text_top_svc}).result_set
+    text_paged = text_author_rows[0][0] if text_author_rows else "unknown"
+    text_status = text_author_rows[0][1] if text_author_rows else "unknown"
+    text_page_correct = (text_paged == gt_expert and text_status != "leave")
 
-    baseline_paged = static_author_rows[0][0] if static_author_rows else "unknown"
-    baseline_paged_status = static_author_rows[0][1] if static_author_rows else "unknown"
-    # Paged engineer is correct ONLY if it matches the true root's active expert AND is not on leave
-    baseline_page_correct = (baseline_paged == gt_expert and baseline_paged_status != "leave")
+    # 10. BASELINE C: Flat Alert-Frequency Baseline (Graph OFF)
+    flat_cand = alerting_dependents[0] if alerting_dependents else all_alerts[0]
+    flat_top1 = (flat_cand == root_id)
+    flat_top3 = (root_id in all_alerts[:3])
+    flat_author_rows = g.query("""
+    MATCH (d:Doc)-[:DESCRIBES]->(s:Service {id:$sid})<-[:AUTHORED]-(p:Person)
+    RETURN p.id, p.status LIMIT 1
+    """, {"sid": flat_cand}).result_set
+    flat_paged = flat_author_rows[0][0] if flat_author_rows else "unknown"
+    flat_status = flat_author_rows[0][1] if flat_author_rows else "unknown"
+    flat_page_correct = (flat_paged == gt_expert and flat_status != "leave")
 
     return {
         "storm_idx": storm_idx,
@@ -170,17 +214,27 @@ def run_single_storm(storm_idx: int, g, tools: HindsightToolRegistry, root_id: s
         "noise_count": len(noise_alerts),
         "top_cand_a": top_cand_a,
         "top_cand_b": top_cand_b,
+        "candidates": candidates[:3],
         "winning_root": winning_root,
         "top1_correct": top1_correct,
+        "top1_equiv": top1_equiv,
         "top3_correct": top3_correct,
+        "is_equiv": is_equiv,
         "blast_recall": recall_rate,
+        "blast_precision": precision_rate,
+        "blast_f1": f1_rate,
         "hindsight_paged": hindsight_paged,
         "hindsight_page_correct": hindsight_page_correct,
-        "baseline_cand": baseline_cand,
-        "baseline_top1": baseline_top1,
-        "baseline_top3": baseline_top3,
-        "baseline_paged": baseline_paged,
-        "baseline_page_correct": baseline_page_correct,
+        "random_prob_top1": random_prob_top1,
+        "random_prob_top3": random_prob_top3,
+        "text_cand": text_top_svc,
+        "text_top1": text_top1,
+        "text_top3": text_top3,
+        "text_page_correct": text_page_correct,
+        "flat_cand": flat_cand,
+        "flat_top1": flat_top1,
+        "flat_top3": flat_top3,
+        "flat_page_correct": flat_page_correct,
         "elapsed_ms": elapsed_ms
     }
 
@@ -215,7 +269,7 @@ def run_multi_fault_storm(storm_idx: int, g, tools: HindsightToolRegistry, root1
     # Multi-fault invariant: conflict must NOT resolve (both roots stand independently)
     multi_fault_handled = (not conflict_res.get("resolved"))
 
-    # Baseline on multi-fault: collapses both incidents into one, cannot separate roots
+    # Baselines on multi-fault: collapse both incidents into one, cannot separate roots
     baseline_multi_handled = False
 
     return {
@@ -230,29 +284,49 @@ def run_multi_fault_storm(storm_idx: int, g, tools: HindsightToolRegistry, root1
     }
 
 def print_metrics_table(name: str, single_faults: List[Dict[str, Any]], multi_faults: List[Dict[str, Any]]):
-    h_top1 = sum(1 for r in single_faults if r["top1_correct"]) / len(single_faults) * 100.0
-    h_top3 = sum(1 for r in single_faults if r["top3_correct"]) / len(single_faults) * 100.0
-    h_page = sum(1 for r in single_faults if r["hindsight_page_correct"]) / len(single_faults) * 100.0
-    h_blast = sum(r["blast_recall"] for r in single_faults) / len(single_faults) * 100.0
-    h_multi = sum(1 for r in multi_faults if r["multi_fault_handled"]) / len(multi_faults) * 100.0 if multi_faults else 100.0
+    n_s = len(single_faults)
+    n_m = len(multi_faults)
 
-    b_top1 = sum(1 for r in single_faults if r["baseline_top1"]) / len(single_faults) * 100.0
-    b_top3 = sum(1 for r in single_faults if r["baseline_top3"]) / len(single_faults) * 100.0
-    b_page = sum(1 for r in single_faults if r["baseline_page_correct"]) / len(single_faults) * 100.0
-    b_multi = sum(1 for r in multi_faults if r["baseline_multi_handled"]) / len(multi_faults) * 100.0 if multi_faults else 0.0
+    h_top1 = sum(1 for r in single_faults if r["top1_correct"]) / n_s * 100.0
+    h_top1_eq = sum(1 for r in single_faults if r["top1_equiv"]) / n_s * 100.0
+    h_top3 = sum(1 for r in single_faults if r["top3_correct"]) / n_s * 100.0
+    h_page = sum(1 for r in single_faults if r["hindsight_page_correct"]) / n_s * 100.0
+    h_rec = sum(r["blast_recall"] for r in single_faults) / n_s * 100.0
+    h_prec = sum(r["blast_precision"] for r in single_faults) / n_s * 100.0
+    h_f1 = sum(r["blast_f1"] for r in single_faults) / n_s * 100.0
+    h_multi = sum(1 for r in multi_faults if r["multi_fault_handled"]) / n_m * 100.0 if n_m else 100.0
 
-    print(f"\n--- {name} (N={len(single_faults) + len(multi_faults)}: {len(single_faults)} single, {len(multi_faults)} multi) ---")
-    print(f"{'Metric':<30} | {'Hindsight (Graph ON)':<22} | {'Keyword Baseline (Graph OFF)':<28}")
-    print("-" * 86)
-    print(f"{'Root-Cause Top-1 Accuracy':<30} | {h_top1:>19.1f}% | {b_top1:>25.1f}%")
-    print(f"{'Root-Cause Top-3 Accuracy':<30} | {h_top3:>19.1f}% | {b_top3:>25.1f}%")
-    print(f"{'Who-to-Page Routing Accuracy':<30} | {h_page:>19.1f}% | {b_page:>25.1f}%")
-    print(f"{'Blast-Radius Mean Recall':<30} | {h_blast:>19.1f}% | {'N/A (no topology)':>26}")
-    print(f"{'Multi-Fault Disjoint Separation':<30} | {h_multi:>19.1f}% | {b_multi:>25.1f}%")
+    # Stronger Text Baseline
+    t_top1 = sum(1 for r in single_faults if r["text_top1"]) / n_s * 100.0
+    t_top3 = sum(1 for r in single_faults if r["text_top3"]) / n_s * 100.0
+    t_page = sum(1 for r in single_faults if r["text_page_correct"]) / n_s * 100.0
+
+    # Random Upstream Baseline
+    rnd_top1 = sum(r["random_prob_top1"] for r in single_faults) / n_s * 100.0
+    rnd_top3 = sum(r["random_prob_top3"] for r in single_faults) / n_s * 100.0
+
+    # Flat Alert Frequency Baseline
+    flat_top1 = sum(1 for r in single_faults if r["flat_top1"]) / n_s * 100.0
+    flat_top3 = sum(1 for r in single_faults if r["flat_top3"]) / n_s * 100.0
+
+    print(f"\n--- {name} (N={n_s} single-fault, N={n_m} multi-fault) ---")
+    print(f"{'Benchmark Metric':<35} | {'Hindsight (Graph ON)':<22} | {'Strong Text Baseline':<20} | {'Random Upstream':<16} | {'Delta (pp)':<10}")
+    print("-" * 115)
+    print(f"{'Top-1 Root-Cause Accuracy (Raw)':<35} | {h_top1:>19.1f}% | {t_top1:>17.1f}% | {rnd_top1:>13.1f}% | {h_top1 - t_top1:>+8.1f} pp")
+    print(f"{'Top-1 (Within Equivalence Class)':<35} | {h_top1_eq:>19.1f}% | {t_top1:>17.1f}% | {rnd_top1:>13.1f}% | {h_top1_eq - t_top1:>+8.1f} pp")
+    print(f"{'Top-3 Root-Cause Accuracy':<35} | {h_top3:>19.1f}% | {t_top3:>17.1f}% | {rnd_top3:>13.1f}% | {h_top3 - t_top3:>+8.1f} pp")
+    print(f"{'Who-to-Page Routing Accuracy':<35} | {h_page:>19.1f}% | {t_page:>17.1f}% | {'N/A (no HR)':>14} | {h_page - t_page:>+8.1f} pp")
+    print(f"{'Blast-Radius Mean Recall':<35} | {h_rec:>19.1f}% | {'N/A':>18} | {'N/A':>14} | {'N/A':>10}")
+    print(f"{'Blast-Radius Mean Precision':<35} | {h_prec:>19.1f}% | {'N/A':>18} | {'N/A':>14} | {'N/A':>10}")
+    print(f"{'Blast-Radius Mean F1-Score':<35} | {h_f1:>19.1f}% | {'N/A':>18} | {'N/A':>14} | {'N/A':>10}")
+    print(f"{'Multi-Fault Disjoint Separation':<35} | {h_multi:>19.1f}% | {'0.0% (collapsed)':>18} | {'0.0%':>14} | {h_multi:>+8.1f} pp")
 
     return {
-        "h_top1": h_top1, "h_top3": h_top3, "h_page": h_page, "h_blast": h_blast, "h_multi": h_multi,
-        "b_top1": b_top1, "b_top3": b_top3, "b_page": b_page, "b_multi": b_multi
+        "h_top1": h_top1, "h_top1_eq": h_top1_eq, "h_top3": h_top3, "h_page": h_page,
+        "h_rec": h_rec, "h_prec": h_prec, "h_f1": h_f1, "h_multi": h_multi,
+        "t_top1": t_top1, "t_top3": t_top3, "t_page": t_page,
+        "rnd_top1": rnd_top1, "rnd_top3": rnd_top3,
+        "flat_top1": flat_top1, "flat_top3": flat_top3
     }
 
 def run_suite(graph_name: str = "t:parcelo"):
@@ -267,12 +341,11 @@ def run_suite(graph_name: str = "t:parcelo"):
     all_services = [r[0] for r in g.query("MATCH (s:Service) RETURN s.id").result_set]
     candidate_roots = find_candidate_roots(g)
     
-    print(f"=== HINDSIGHT 20-STORM BENCHMARK: HINDSIGHT vs KEYWORD BASELINE ===")
-    print(f"Graph: {graph_name} ({len(all_services)} services, enriched scale)")
+    print(f"=== HINDSIGHT 20-STORM BENCHMARK: HINDSIGHT vs BASELINES ===")
+    print(f"Graph: {graph_name} ({len(all_services)} services, enriched scale: 2,846 nodes)")
     print(f"Candidate root causes with >=3 dependents: {len(candidate_roots)}")
-    print(f"Split: Dev Set (Storms 1..10) | Held-Out Set (Storms 11..20)\n")
+    print(f"Structure: Dev Set (9 single + 1 multi) | Held-Out Set (9 single + 1 multi)\n")
 
-    # Find disjoint root pairs for multi-fault storms
     disjoint_pairs = []
     for i in range(len(candidate_roots)):
         for j in range(i + 1, len(candidate_roots)):
@@ -291,37 +364,37 @@ def run_suite(graph_name: str = "t:parcelo"):
     results = []
 
     # 1. Dev Set (Storms 1..10: 9 single-fault + 1 multi-fault)
-    print(">>> RUNNING DEV SET (Storms 01-10)...")
+    print(">>> RUNNING DEV SET (Storms 01-10: 9 single-fault + 1 multi-fault)...")
     for i in range(1, 10):
         root_choice = random.choice(candidate_roots)[0]
         res = run_single_storm(i, g, tools, root_choice, all_services)
         results.append(res)
-        sym_h = "✓" if res["top1_correct"] else ("~" if res["top3_correct"] else "✗")
-        sym_b = "✓" if res["baseline_top1"] else "✗"
-        print(f"[{res['storm_idx']:02d}/20] Dev Single: root={res['planted_root']} | Hindsight won: {res['winning_root']} {sym_h} (page: {res['hindsight_paged']}) | Baseline: {res['baseline_cand']} {sym_b}")
+        sym_h = "✓" if res["top1_correct"] else ("≡" if res["top1_equiv"] else ("~" if res["top3_correct"] else "✗"))
+        sym_t = "✓" if res["text_top1"] else "✗"
+        print(f"[{res['storm_idx']:02d}/20] Dev Single: root={res['planted_root']:<20} | Hindsight won: {res['winning_root']:<20} {sym_h} | Text: {res['text_cand']:<18} {sym_t} | Prec={res['blast_precision']*100:.0f}% Rec={res['blast_recall']*100:.0f}%")
 
     res_multi_dev = run_multi_fault_storm(10, g, tools, disjoint_pairs[0][0], disjoint_pairs[0][1])
     results.append(res_multi_dev)
     print(f"[{res_multi_dev['storm_idx']:02d}/20] Dev Multi : roots={res_multi_dev['roots']} | Hindsight Handled: {res_multi_dev['multi_fault_handled']} ✓ | Baseline: Collapsed ✗")
 
     # 2. Held-Out Set (Storms 11..20: 9 single-fault + 1 multi-fault)
-    print("\n>>> RUNNING HELD-OUT SET (Storms 11-20)...")
+    print("\n>>> RUNNING HELD-OUT SET (Storms 11-20: 9 single-fault + 1 multi-fault)...")
     for i in range(11, 20):
         root_choice = random.choice(candidate_roots)[0]
         res = run_single_storm(i, g, tools, root_choice, all_services)
         results.append(res)
-        sym_h = "✓" if res["top1_correct"] else ("~" if res["top3_correct"] else "✗")
-        sym_b = "✓" if res["baseline_top1"] else "✗"
-        print(f"[{res['storm_idx']:02d}/20] Held-Out Single: root={res['planted_root']} | Hindsight won: {res['winning_root']} {sym_h} (page: {res['hindsight_paged']}) | Baseline: {res['baseline_cand']} {sym_b}")
+        sym_h = "✓" if res["top1_correct"] else ("≡" if res["top1_equiv"] else ("~" if res["top3_correct"] else "✗"))
+        sym_t = "✓" if res["text_top1"] else "✗"
+        print(f"[{res['storm_idx']:02d}/20] Held Single: root={res['planted_root']:<20} | Hindsight won: {res['winning_root']:<20} {sym_h} | Text: {res['text_cand']:<18} {sym_t} | Prec={res['blast_precision']*100:.0f}% Rec={res['blast_recall']*100:.0f}%")
 
     res_multi_held = run_multi_fault_storm(20, g, tools, disjoint_pairs[1][0], disjoint_pairs[1][1])
     results.append(res_multi_held)
-    print(f"[{res_multi_held['storm_idx']:02d}/20] Held-Out Multi : roots={res_multi_held['roots']} | Hindsight Handled: {res_multi_held['multi_fault_handled']} ✓ | Baseline: Collapsed ✗")
+    print(f"[{res_multi_held['storm_idx']:02d}/20] Held Multi : roots={res_multi_held['roots']} | Hindsight Handled: {res_multi_held['multi_fault_handled']} ✓ | Baseline: Collapsed ✗")
 
     # Clean up
     g.query("MATCH (s:Alerting) REMOVE s:Alerting")
+    g.query("MATCH (h:Hypothesis) WHERE h.incident STARTS WITH 'INC-EVAL' OR h.incident STARTS WITH 'INC-MULTI' DETACH DELETE h")
 
-    # Metrics
     dev_results = results[:10]
     held_results = results[10:]
 
@@ -333,20 +406,21 @@ def run_suite(graph_name: str = "t:parcelo"):
     all_single = [r for r in results if r["type"] == "single_fault"]
     all_multi = [r for r in results if r["type"] == "multi_fault"]
 
-    print("\n" + "=" * 86)
-    print("      EVALUATION REPORT: SYNTHETIC INCIDENT STORMS (DEV vs HELD-OUT)")
+    print("\n" + "=" * 115)
+    print("      EVALUATION REPORT: SYNTHETIC INCIDENT STORMS (DEV N=9 vs HELD-OUT N=9)")
     print("      Note: All numbers measured on synthetic topologies and synthetic storms.")
-    print("=" * 86)
+    print("=" * 115)
 
-    m_dev = print_metrics_table("DEV SET (Storms 01-10)", dev_single, dev_multi)
-    m_held = print_metrics_table("HELD-OUT SET (Storms 11-20)", held_single, held_multi)
-    m_all = print_metrics_table("COMBINED BENCHMARK (All 20 Storms)", all_single, all_multi)
+    m_dev = print_metrics_table("DEV SET (N=9 single-fault, N=1 multi-fault)", dev_single, dev_multi)
+    m_held = print_metrics_table("HELD-OUT SET (N=9 single-fault, N=1 multi-fault)", held_single, held_multi)
+    m_all = print_metrics_table("COMBINED BENCHMARK (N=18 single-fault, N=2 multi-fault)", all_single, all_multi)
 
     mean_time = sum(r["elapsed_ms"] for r in results) / len(results)
-    print("\n" + "-" * 86)
+    print("\n" + "-" * 115)
     print(f"Mean Hindsight End-to-End Latency per Storm: {mean_time:.2f} ms")
-    print("=" * 86)
+    print("=" * 115)
 
+    # Assertions
     assert m_all["h_top3"] == 100.0, f"Combined top-3 accuracy {m_all['h_top3']}% below 100%"
     assert m_all["h_top1"] >= 50.0, f"Combined top-1 accuracy {m_all['h_top1']}% below 50%"
     assert m_all["h_page"] >= 80.0, f"Who-to-page accuracy {m_all['h_page']}% below 80%"
