@@ -650,24 +650,31 @@
   flex-direction: column;
   overflow: hidden;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), 0 8px 32px rgba(0, 0, 0, 0.6);
+  min-height: 0;
 }
 
 .panel-header {
-  height: 48px;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
   background: rgba(255, 255, 255, 0.015);
   border-bottom: 1px solid var(--border-glass);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 1.25rem;
+  gap: 12px;
+  padding: 0 20px;
   z-index: 10;
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .panel-title {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
 }
 
 .live-indicator {
@@ -677,41 +684,70 @@
   border-radius: 50%;
   box-shadow: 0 0 8px var(--accent-emerald);
   animation: pulse-ring 2.5s infinite;
+  flex-shrink: 0;
 }
 
-.panel-title h2 {
-  font-family: var(--font-instrument);
+.panel-title h2,
+.panel-header h2 {
+  font-family: var(--font-instrument), Georgia, serif;
   font-size: 1.25rem;
   font-weight: 400;
   letter-spacing: -0.01em;
   color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  flex-shrink: 1;
 }
 
 .node-count {
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
+/* Floating Canvas Legend (Zone C) */
 .graph-legend {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 25;
   display: flex;
-  gap: 0.75rem;
-  font-size: 0.68rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  background: rgba(10, 10, 10, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.6);
+  font-size: 0.75rem;
   color: var(--text-dim);
   font-weight: 500;
+  pointer-events: none;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .legend-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .legend-dot.root { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.7); }
@@ -720,13 +756,86 @@
 .legend-dot.choke { background: #38bdf8; }
 .legend-dot.healthy { background: rgba(255, 255, 255, 0.3); }
 
+/* Cytoscape Canvas Container */
 .cy-canvas {
-  flex: 1;
+  position: absolute;
+  inset: 56px 0 0 0;
   width: 100%;
-  height: 100%;
+  height: calc(100% - 56px);
   background:
     radial-gradient(circle at center, rgba(56, 189, 248, 0.02) 0%, transparent 70%),
     radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.015) 0%, transparent 40%);
+}
+
+/* Q7 Diff Overlay Banner (Docked Top-Left of Canvas) */
+.diff-overlay-banner {
+  position: absolute;
+  top: 68px;
+  left: 12px;
+  max-width: min(560px, calc(100% - 24px));
+  background: rgba(245, 158, 11, 0.12);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 30;
+  color: #fef3c7;
+}
+
+.diff-banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.diff-tag {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(245, 158, 11, 0.25);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: #fef08a;
+  margin-bottom: 2px;
+}
+
+#diff-banner-text {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.diff-banner-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px;
+  margin-top: -2px;
+  border-radius: 50%;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.diff-banner-close:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.15);
 }
 
 /* Floating Node Inspector HUD */
@@ -819,14 +928,29 @@
 }
 
 .crew-panel .panel-header h2 {
-  font-family: var(--font-instrument);
+  font-family: var(--font-instrument), Georgia, serif;
   font-size: 1.25rem;
   font-weight: 400;
   letter-spacing: -0.01em;
   color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  flex-shrink: 1;
 }
 
-.badge {
+.crew-title-tag {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  margin-left: 6px;
+}
+
+.crew-panel .badge,
+#incident-badge {
   font-size: 0.65rem;
   font-family: var(--font-mono);
   letter-spacing: 0.05em;
@@ -836,6 +960,8 @@
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-glass);
   color: var(--text-dim);
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .crew-lanes {

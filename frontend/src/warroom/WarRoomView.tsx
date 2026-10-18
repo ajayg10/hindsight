@@ -214,7 +214,7 @@ export default function WarRoomView() {
     {/* Right: Agent Crew Lanes & Incident Board */}
     <aside className="crew-panel">
       <div className="panel-header">
-        <h2>Agent Crew Lanes (Graph-Coordinated)</h2>
+        <h2>Agent Crew Lanes <span className="crew-title-tag">(Graph-Coordinated)</span></h2>
         <span className="badge" id="incident-badge">Idle</span>
       </div>
 
