@@ -15,5 +15,6 @@ COPY scripts scripts
 COPY backend backend
 COPY seed seed
 COPY docs docs
+COPY frontend/legacy frontend/legacy
 COPY --from=frontend-builder /app/out /work/frontend/out
 CMD ["python", "scripts/phase0.py"]
