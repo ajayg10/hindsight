@@ -3,7 +3,7 @@
 import React, { useRef } from "react";
 import Link from "next/link";
 import { motion, useInView, useReducedMotion } from "framer-motion";
-import { REPO_URL, UPSTREAM_URL } from "@/lib/site";
+import { REPO_URL } from "@/lib/site";
 
 export const CtaFooter: React.FC = () => {
   const ref = useRef<HTMLDivElement>(null);
@@ -39,31 +39,31 @@ export const CtaFooter: React.FC = () => {
 
         {/* Slim Footer */}
         <div className="w-full flex flex-col md:flex-row items-center justify-between gap-4 text-white/40 text-xs pt-8 border-t border-white/10">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
             <span className="font-semibold text-white/70">Hindsight</span>
-            <span>&bull;</span>
+            <span aria-hidden="true">&bull;</span>
             <a
               href={REPO_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-white transition-colors underline"
             >
-              GitHub
+              View on GitHub
             </a>
-            <span>&bull;</span>
-            <span>Apache 2.0</span>
+            <span aria-hidden="true">&bull;</span>
+            <span>Open source under Apache 2.0</span>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-2 text-center md:text-right">
             <span>
-              Forked from{" "}
+              Built with{" "}
               <a
-                href={UPSTREAM_URL}
+                href="https://www.falkordb.com"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-white transition-colors underline"
               >
-                ajayg10/hindsight
+                FalkorDB
               </a>
             </span>
           </div>
