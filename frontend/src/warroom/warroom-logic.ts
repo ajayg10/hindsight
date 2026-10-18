@@ -352,7 +352,8 @@ function initEventStream() {
     evtSource.close();
   }
 
-  evtSource = new EventSource("/api/events");
+  const streamUrl = currentSessionId ? `/api/events?session_id=${encodeURIComponent(currentSessionId)}` : "/api/events";
+  evtSource = new EventSource(streamUrl);
 
   evtSource.onmessage = (e) => {
     // Ping or generic message
