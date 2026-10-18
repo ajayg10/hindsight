@@ -6,9 +6,15 @@
 
 [![FalkorDB](https://img.shields.io/badge/Graph_Engine-FalkorDB_v0.5.0-blue.svg)](https://falkordb.com)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI_+_SSE-green.svg)](https://fastapi.tiangolo.com)
+[![Live Demo](https://img.shields.io/badge/Live_Landing_Page-http%3A%2F%2F43.204.29.169%3A8000-brightgreen.svg)](http://43.204.29.169:8000)
+[![Live War Room](https://img.shields.io/badge/Live_War_Room-http%3A%2F%2F43.204.29.169%3A8000%2Fapp%2F-blueviolet.svg)](http://43.204.29.169:8000/app/)
 [![MCP](https://img.shields.io/badge/Protocol-Model_Context_Protocol-purple.svg)](https://modelcontextprotocol.io)
-[![Docker](https://img.shields.io/badge/Deployment-Docker_Compose_+_Caddy_TLS-orange.svg)](https://caddyserver.com)
 [![License](https://img.shields.io/badge/License-Apache_2.0-lightgrey.svg)](LICENSE)
+
+> 🌐 **Live Public Deployment:**
+> - **Landing Page:** [http://43.204.29.169:8000/](http://43.204.29.169:8000/)
+> - **Operational War Room:** [http://43.204.29.169:8000/app/](http://43.204.29.169:8000/app/)
+> - **Live FalkorDB Health:** [http://43.204.29.169:8000/health](http://43.204.29.169:8000/health) (2,846 nodes, 6,933 edges)
 
 ---
 
@@ -103,6 +109,130 @@ flowchart TD
     Crew --> API
     Crew --> SessionForks
 ```
+
+---
+
+## 🗺️ FalkorDB Graph Schema & Agent Decision Mapping
+
+FalkorDB is the single source of truth for all incident triaging, agent coordination, and organizational memory in Hindsight. The operational graph contains **2,846 nodes and 6,933 edges** across 5 enterprise tenants with sub-millisecond query execution (**p50 = 0.385 ms**).
+
+### 1. Graph Data Model & Relationship Topology
+
+```mermaid
+graph TD
+    %% Node Definitions
+    Service["(:Service)<br/>id, tier, pagerank, betweenness, rev_per_min"]
+    Team["(:Team)<br/>id, name, slack_channel"]
+    Engineer["(:Person)<br/>id, name, role, on_call, on_leave"]
+    Decision["(:Decision / :ADR)<br/>id, title, at, valid_from"]
+    Doc["(:Doc / :Runbook)<br/>id, title, status, win_rate"]
+    Procedure["(:Procedure)<br/>id, name, status, last_validated"]
+    Fact["(:Fact)<br/>subject, predicate, object, valid_from, valid_to"]
+    Incident["(:Incident)<br/>id, status, severity, root_cause"]
+    Task["(:Task)<br/>id, status, version, lease_until"]
+    Agent["(:Agent)<br/>id, role, heartbeat_at"]
+
+    %% Edges
+    Service -->|:DEPENDS_ON| Service
+    Team -->|:OWNS| Service
+    Engineer -->|:MEMBER_OF| Team
+    Engineer -->|:EXPERT_IN {score, decay}| Service
+    Decision -->|:AFFECTS| Service
+    Doc -->|:DESCRIBES| Service
+    Procedure -->|:TARGETS| Service
+    Fact -->|:SUPERSEDES| Fact
+    Decision -->|:INVALIDATES| Procedure
+    Incident -->|:AFFECTED| Service
+    Task -->|:CLAIMED_BY| Agent
+    Incident -->|:REQUIRES| Task
+```
+
+### 2. Node & Relationship Taxonomy
+
+| Node Label | Core Properties | Example Nodes | Purpose |
+| :--- | :--- | :--- | :--- |
+| `(:Service)` | `id, name, tier, rev_per_min, pagerank, betweenness` | `cache-b`, `checkout-api`, `cartservice` | Full 58-microservice runtime architecture |
+| `(:Person)` | `id, name, role, on_call, on_leave, tz` | `priya-sharma`, `marco-rossi` | Engineers with dynamic leave & on-call status |
+| `(:Team)` | `id, name, slack_channel` | `core-infra`, `checkout-squad` | Service ownership and escalation channels |
+| `(:Decision)` | `id, title, at, valid_from` | `change-adr-17` | Architectural Decision Records (ADRs) |
+| `(:Procedure)`| `id, name, status, win_rate, last_validated_at` | `R-7` (cache-a, stale), `R-12` (cache-b, valid) | Operational runbooks with win rates |
+| `(:Fact)` | `subject, predicate, object, valid_from, valid_to` | Temporal triples (Q6 ledger) | Immutable temporal ledger with validity intervals |
+| `(:Task)` | `id, kind, status, version, lease_until` | `task-investigate-a`, `task-remediate` | Atomic coordination work items |
+
+| Relationship | Direction | Semantics in FalkorDB |
+| :--- | :--- | :--- |
+| `[:DEPENDS_ON]` | `(Service)-[:DEPENDS_ON]->(Service)` | Upstream/downstream call graph |
+| `[:OWNS]` | `(Team)-[:OWNS]->(Service)` | Service governance & escalation |
+| `[:EXPERT_IN]` | `(Person)-[:EXPERT_IN {score}]->(Service)` | Time-decayed expertise score |
+| `[:TARGETS]` | `(Procedure)-[:TARGETS]->(Service)` | What service a runbook modifies |
+| `[:INVALIDATES]` | `(Decision)-[:INVALIDATES]->(Procedure)` | ADR superseding historical runbook |
+| `[:SUPERSEDES]` | `(Fact)-[:SUPERSEDES]->(Fact)` | Temporal fact invalidation |
+| `[:CLAIMED_BY]` | `(Task)-[:CLAIMED_BY]->(Agent)` | Zero-mutex atomic task lease |
+
+---
+
+### 🛡️ Show the Graph Doing the Work: How Agent Decisions Query FalkorDB
+
+Every critical decision made by the agent crew is derived strictly from a FalkorDB Cypher traversal—**not from LLM guessing or flat keyword matching**:
+
+#### 1. Root Cause Discovery via Upstream Intersection (Investigator-A)
+*The agent traverses up the dependency tree from all alerting services to find the common ancestor explaining all symptoms:*
+```cypher
+MATCH (alerted:Service)
+WHERE alerted.id IN $alerting_services
+MATCH (candidate:Service)<-[:DEPENDS_ON*0..5]-(alerted)
+WITH candidate, count(DISTINCT alerted) AS covered
+WHERE covered = size($alerting_services)
+RETURN candidate.id, candidate.rev_per_min, candidate.betweenness
+ORDER BY candidate.betweenness DESC, candidate.rev_per_min DESC
+LIMIT 3;
+```
+
+#### 2. Conflict Resolution via Graph Subsumption (Q10)
+*When two investigators propose competing candidates (e.g. `checkout-api` vs `cache-b`), the agent evaluates graph reachability:*
+```cypher
+MATCH (c1:Service {id: $cand1}), (c2:Service {id: $cand2})
+OPTIONAL MATCH p = shortestPath((c2)-[:DEPENDS_ON*1..5]->(c1))
+RETURN CASE 
+  WHEN p IS NOT NULL THEN 'c1_subsumes_c2'
+  ELSE 'independent'
+END AS verdict;
+```
+*Result: Because `checkout-api` depends on `cache-b`, `cache-b` is identified as the true upstream root cause; `checkout-api` is recognized as a downstream victim.*
+
+#### 3. Stale Runbook Refusal via ADR Lineage (RULE-05 Guardrail)
+*Keyword search recommends runbook R-7 due to an 83% win rate. Hindsight checks the graph for architectural changes:*
+```cypher
+MATCH (p:Procedure {id: 'R-7'})-[:TARGETS]->(target:Service)
+OPTIONAL MATCH (adr:Decision)-[:AFFECTS|SUPERSEDES]->(target)
+WHERE adr.at > p.last_validated_at
+RETURN p.id, target.id, adr.id AS invalidating_adr,
+       CASE WHEN adr IS NOT NULL THEN 'REFUSE_STALE' ELSE 'PERMIT' END AS policy_action;
+```
+*Result: The agent REFUSES R-7 because ADR-17 migrated the architecture, selecting R-12 instead.*
+
+#### 4. Leave-Aware Dynamic Expert Routing (Concierge Agent)
+*Bypasses absent tech leads to ensure critical pages reach available engineers:*
+```cypher
+MATCH (s:Service {id: $root_cause})<-[e:EXPERT_IN]-(p:Person)
+WHERE p.on_leave = false AND p.on_call = true
+RETURN p.name, p.slack_channel, e.score
+ORDER BY e.score DESC
+LIMIT 1;
+```
+*Result: Primary expert Priya Sharma is on leave (`on_leave = true`). Graph automatically pages Marco Rossi (score 0.74).*
+
+#### 5. Zero-Mutex Distributed Task Claiming (Atomic Version Gate)
+*Agents coordinate without application-level distributed locks using atomic Cypher conditional increments:*
+```cypher
+MATCH (t:Task {id: $task_id, status: 'open'})
+WHERE t.version = $expected_version
+SET t.status = 'claimed',
+    t.version = t.version + 1,
+    t.lease_until = $now + $lease_duration_ms
+RETURN t.id, t.version;
+```
+*Result: Exactly 1 agent wins the claim; tested under 32 concurrent threads with strictly 0 double-claims.*
 
 ---
 
