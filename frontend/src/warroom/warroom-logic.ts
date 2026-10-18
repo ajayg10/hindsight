@@ -1164,13 +1164,6 @@ function initControls() {
   const guideStep2 = document.getElementById("guide-step-2");
   const guideStep3 = document.getElementById("guide-step-3");
   const guideStep4 = document.getElementById("guide-step-4");
-  const btnScript = document.getElementById("btn-video-script");
-  const scriptModal = document.getElementById("script-modal");
-  const scriptClose = document.getElementById("script-close");
-  const tabEn = document.getElementById("tab-script-en");
-  const tabHi = document.getElementById("tab-script-hi");
-  const contentEn = document.getElementById("script-content-en");
-  const contentHi = document.getElementById("script-content-hi");
 
   if (guideStep1) {
     guideStep1.addEventListener("click", () => {
@@ -1210,27 +1203,6 @@ function initControls() {
       const companyBtn = document.getElementById("btn-company-modal");
       if (companyBtn) companyBtn.click();
       guideStep4.classList.add("active");
-    });
-  }
-
-  if (btnScript && scriptModal) {
-    btnScript.addEventListener("click", () => scriptModal.classList.remove("hidden"));
-  }
-  if (scriptClose && scriptModal) {
-    scriptClose.addEventListener("click", () => scriptModal.classList.add("hidden"));
-  }
-  if (tabEn && tabHi && contentEn && contentHi) {
-    tabEn.addEventListener("click", () => {
-      tabEn.classList.add("active");
-      tabHi.classList.remove("active");
-      contentEn.classList.remove("hidden");
-      contentHi.classList.add("hidden");
-    });
-    tabHi.addEventListener("click", () => {
-      tabHi.classList.add("active");
-      tabEn.classList.remove("active");
-      contentHi.classList.remove("hidden");
-      contentEn.classList.add("hidden");
     });
   }
 }
