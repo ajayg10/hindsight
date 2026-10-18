@@ -1135,13 +1135,24 @@ async def run_baseline_storm(payload: Optional[Dict[str, Any]] = None):
         "details": res
     }
 
+@app.get("/mcp")
+@app.get("/mcp/")
 @app.get("/mcp/tools")
 def list_mcp_tools():
     """Returns read-only tools permitted on the public MCP endpoint."""
     return {
         "server": "Hindsight-Public",
+        "version": "1.0.0",
+        "protocol": "Model Context Protocol (MCP)",
         "mode": "read-only",
         "persist_answer": False,
+        "description": "Public read-only Model Context Protocol (MCP) server for Hindsight operational graph reasoning.",
+        "endpoints": {
+            "info": "/mcp",
+            "tools": "/mcp/tools",
+            "call": "/mcp/call"
+        },
+        "tools_count": 10,
         "tools": [
             {"name": "split_storm", "description": "Partitions raw alerts into connected incident clusters"},
             {"name": "root_cause_candidates", "description": "Common upstream dependency intersection (Q2)"},
