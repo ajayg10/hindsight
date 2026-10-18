@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -22,5 +23,5 @@ jobs:
             cd ~/hindsight
             git pull origin main
             sudo docker compose up -d --build
-            sudo docker compose exec web python seed/gen.py
-            sudo docker compose exec web python seed/tenants.py
+            sudo docker compose exec -T web python seed/gen.py
+            sudo docker compose exec -T web python seed/tenants.py
