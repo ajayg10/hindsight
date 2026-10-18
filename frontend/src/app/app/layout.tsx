@@ -12,5 +12,5 @@ export default function WarRoomLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return <div className="font-sans font-serif">{children}</div>;
 }
