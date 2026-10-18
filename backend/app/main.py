@@ -61,7 +61,13 @@ RATE_LIMIT_MAX_REQUESTS = 120
 @app.middleware("http")
 async def rate_limiting_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static") or path == "/health" or path == "/favicon.ico":
+    if (
+        path.startswith("/static")
+        or path.startswith("/_next")
+        or path.startswith("/images")
+        or path.startswith("/videos")
+        or path in ["/", "/app", "/app/", "/health", "/favicon.ico", "/icon.png"]
+    ):
         return await call_next(request)
 
     client_ip = request.client.host if request.client else "127.0.0.1"
@@ -1180,12 +1186,43 @@ def call_public_mcp_tool(request: Request, payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=f"Tool '{tool_name}' not permitted on public read-only endpoint.")
 
 # Serve static frontend files
-if FRONTEND_DIR.exists():
+STATIC_DIR = FRONTEND_DIR / "out" if (FRONTEND_DIR / "out").exists() else FRONTEND_DIR
+
+if STATIC_DIR.exists():
     @app.get("/")
     def serve_index():
-        index_file = FRONTEND_DIR / "index.html"
+        index_file = STATIC_DIR / "index.html"
         if index_file.exists():
             return FileResponse(index_file)
         return HTMLResponse("<h1>Hindsight Frontend Loading...</h1>")
 
-    app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
+    @app.get("/app")
+    @app.get("/app/")
+    def serve_app():
+        app_file = STATIC_DIR / "app" / "index.html"
+        if app_file.exists():
+            return FileResponse(app_file)
+        return HTMLResponse("<h1>Hindsight War Room Loading...</h1>")
+
+    @app.get("/icon.png")
+    def serve_icon():
+        icon_file = STATIC_DIR / "icon.png"
+        if icon_file.exists():
+            return FileResponse(icon_file)
+        raise HTTPException(status_code=404, detail="Icon not found")
+
+    next_dir = STATIC_DIR / "_next"
+    if next_dir.exists():
+        app.mount("/_next", StaticFiles(directory=str(next_dir)), name="next_static")
+
+    images_dir = STATIC_DIR / "images"
+    if images_dir.exists():
+        app.mount("/images", StaticFiles(directory=str(images_dir)), name="images_static")
+
+    videos_dir = STATIC_DIR / "videos"
+    if videos_dir.exists():
+        app.mount("/videos", StaticFiles(directory=str(videos_dir)), name="videos_static")
+
+    # Legacy static directory fallback
+    if FRONTEND_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")

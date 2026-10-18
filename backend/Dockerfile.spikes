@@ -1,7 +1,19 @@
+# Multi-stage build for Next.js frontend and Python backend
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+ENV NODE_ENV=production
+RUN npm run build
+
 FROM python:3.11-slim
 WORKDIR /work
 COPY backend/requirements-spikes.txt backend/requirements-spikes.txt
 RUN pip install --no-cache-dir -r backend/requirements-spikes.txt
 COPY scripts scripts
-COPY backend/app/queries backend/app/queries
+COPY backend backend
+COPY seed seed
+COPY docs docs
+COPY --from=frontend-builder /app/out /work/frontend/out
 CMD ["python", "scripts/phase0.py"]
