@@ -1,4 +1,3 @@
-name: hindsight-prod
 services:
   falkordb:
     image: ${FALKORDB_IMAGE:-falkordb/falkordb:latest}
@@ -29,9 +28,9 @@ services:
       falkordb:
         condition: service_healthy
     command: >
-      sh -c "python -m seed.plant &&
-             python -m seed.tenants &&
-             uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+      sh -c "python seed/gen.py &&
+             python seed/tenants.py &&
+             uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1"
 
   caddy:
     image: caddy:2-alpine
